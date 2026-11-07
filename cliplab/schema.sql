@@ -1,12 +1,12 @@
 CREATE TABLE IF NOT EXISTS clips (
-  id BIGSERIAL PRIMARY KEY,
-  youtube_url TEXT NOT NULL,
-  clip_titulo TEXT NOT NULL,
-  timestamp_inicio TEXT NOT NULL,
-  timestamp_fin TEXT NOT NULL,
-  puntaje_viral SMALLINT CHECK (puntaje_viral BETWEEN 1 AND 100),
-  categoria TEXT,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+ id BIGSERIAL PRIMARY KEY,
+ youtube_url TEXT NOT NULL,
+ clip_titulo TEXT NOT NULL,
+ timestamp_inicio TEXT NOT NULL,
+ timestamp_fin TEXT NOT NULL,
+ puntaje_viral SMALLINT CHECK (puntaje_viral BETWEEN 1 AND 100),
+ categoria TEXT,
+ creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE clips ADD COLUMN IF NOT EXISTS token UUID NOT NULL DEFAULT gen_random_uuid();
 ALTER TABLE clips ADD COLUMN IF NOT EXISTS gancho TEXT;
@@ -18,11 +18,11 @@ ALTER TABLE clips ADD COLUMN IF NOT EXISTS archivo_path TEXT;
 ALTER TABLE clips ADD COLUMN IF NOT EXISTS error TEXT;
 CREATE INDEX IF NOT EXISTS clips_url_idx ON clips (youtube_url);
 CREATE TABLE IF NOT EXISTS publicaciones (
-  id BIGSERIAL PRIMARY KEY,
-  clip_id BIGINT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
-  plataforma TEXT NOT NULL,
-  estado TEXT NOT NULL,
-  externo_id TEXT,
-  error TEXT,
-  creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+ id BIGSERIAL PRIMARY KEY,
+ clip_id BIGINT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+ plataforma TEXT NOT NULL,
+ estado TEXT NOT NULL,
+ externo_id TEXT,
+ error TEXT,
+ creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
 );
