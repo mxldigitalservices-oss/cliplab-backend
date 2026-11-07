@@ -5,6 +5,8 @@ import { toSec } from "./gemini.js";
 
 const DIR = process.env.CLIPS_DIR || "/tmp/clips";
 export const TTL_DIAS = 15;
+
+// Un solo trabajo pesado a la vez: protege la RAM y la CPU de Railway.
 let cola = Promise.resolve();
 export function enCola(fn) { const p = cola.then(fn); cola = p.catch(() => {}); return p; }
 
@@ -19,6 +21,7 @@ async function generar(c) {
   await fs.mkdir(DIR, { recursive: true });
   const out = `${DIR}/clip-${c.token}.mp4`;
   try {
+    // Solo se descarga el tramo del clip, no el video completo.
     await run("yt-dlp", ["--no-playlist", "--download-sections", `*${toSec(c.timestamp_inicio)}-${toSec(c.timestamp_fin)}`,
       "-f", "bv*[height<=720]+ba/b[height<=720]", "--merge-output-format", "mp4", "-o", `${DIR}/raw-${c.token}.%(ext)s`,
       ...(process.env.YT_COOKIES ? ["--cookies", process.env.YT_COOKIES] : []), c.youtube_url]);
@@ -39,6 +42,7 @@ export async function procesarClip(db, c) {
   catch (e) { await db.query("UPDATE clips SET estado='error', error=$2 WHERE id=$1", [c.id, String(e.message).slice(0, 500)]); }
 }
 
+// Si el archivo ya no está (borrado o reinicio), se regenera al vuelo con los timestamps de SQL.
 export async function asegurarArchivo(db, c) {
   if (c.archivo_path && existsSync(c.archivo_path)) return c.archivo_path;
   const f = await enCola(() => generar(c)); await listo(db, c.id, f); return f;
@@ -53,4 +57,8 @@ export async function borrarArchivo(db, id) {
 export async function limpiar(db) {
   const { rows } = await db.query(`SELECT id FROM clips WHERE archivo_path IS NOT NULL AND creado_en < now() - interval '${TTL_DIAS} days'`);
   for (const c of rows) await borrarArchivo(db, c.id);
+  for (const n of await fs.readdir(DIR).catch(() => [])) {   // restos de procesos interrumpidos
+    const st = await fs.stat(`${DIR}/${n}`).catch(() => null);
+    if (st && n.startsWith("raw-") && Date.now() - st.mtimeMs > 3600e3) await fs.unlink(`${DIR}/${n}`).catch(() => {});
+  }
 }
