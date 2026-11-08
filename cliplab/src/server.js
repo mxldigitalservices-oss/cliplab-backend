@@ -12,6 +12,8 @@ import { probarSesion, agenteOcupado } from "./agent/index.js";
 import { limpiar, usoDiscoMb, borrarArchivoClip } from "./janitor.js";
 import { hLoteItem, iniciarDespachador } from "./lotes.js";
 import { rutasLotes } from "./rutas-lotes.js";
+import { hVivoSegmento, prepararVivo, detenerCapturas } from "./vivo.js";
+import { rutasVivo } from "./rutas-vivo.js";
 
 assertConfig();   // sin MASTER_KEY no arranca
 process.on("unhandledRejection", e => console.error("unhandledRejection:", e));
@@ -162,6 +164,7 @@ api.delete("/sesiones/:p", h(async (req, res) => {
 }));
 
 api.use(rutasLotes);   // Fase 4: lotes, ciclos, reciclaje y variantes
+api.use(rutasVivo);    // Fase 6: transmisiones en vivo
 app.use("/api", api);
 app.use((req, res) => res.status(404).json({ error: "No encontrado." }));
 app.use((e, req, res, next) => {
@@ -173,13 +176,14 @@ app.use((e, req, res, next) => {
 // ===== 4. Arranque =====
 await iniciarDb();
 await recuperarJobs();
+await prepararVivo();   // tablas de vivo + reanuda capturas que seguían en curso
 await limpiar().catch(console.error);
 setInterval(() => limpiar().catch(console.error), 600e3).unref();   // cada 10 min
 spawn("yt-dlp", ["-U"], { stdio: "ignore" }).on("error", () => {});   // YouTube cambia seguido: se actualiza al arrancar
 
 // Los elementos de lote comparten worker con su equivalente (medios / agente): FFmpeg y el navegador nunca corren dos tareas a la vez.
-const despachar = job => ({ analizar: hAnalizar, cortar: hCortar, lote_medios: hLoteItem }[job.tipo])(job);
-iniciarWorker("medios", ["analizar", "cortar", "lote_medios"], despachar);
+const despachar = job => ({ analizar: hAnalizar, cortar: hCortar, lote_medios: hLoteItem, vivo_segmento: hVivoSegmento }[job.tipo])(job);
+iniciarWorker("medios", ["analizar", "cortar", "lote_medios", "vivo_segmento"], despachar);
 iniciarWorker("agente", ["publicar", "lote_agente"], job => (job.tipo === "publicar" ? hPublicar : hLoteItem)(job), 4000);
 const detenerLotes = iniciarDespachador();   // ciclos de 10-20 elementos
 
@@ -190,6 +194,7 @@ srv.headersTimeout = 66e3;
 const apagar = () => {
   console.log("Apagando…");
   detenerLotes();
+  detenerCapturas();   // ffmpeg se cierra limpio; las capturas se reanudan al arrancar
   srv.close(() => db.end().finally(() => process.exit(0)));
   setTimeout(() => process.exit(0), 10e3).unref();
 };

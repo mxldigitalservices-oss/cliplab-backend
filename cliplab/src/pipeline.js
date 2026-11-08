@@ -6,6 +6,7 @@ import { encolar } from "./queue.js";
 import { analizar } from "./gemini.js";
 import { cortarClip } from "./video.js";
 import { palabrasDelClip } from "./transcripcion.js";
+import { origenVivo, cortarDesdeSegmento } from "./vivo.js";
 import { publicarEn } from "./agent/index.js";
 import { dormir, rnd } from "./agent/humano.js";
 import { PLATAFORMAS } from "./sesiones.js";
@@ -39,9 +40,11 @@ const cargarClip = id => q("SELECT c.*, f.video_id FROM clips c JOIN fuentes f O
 
 // Corta (reencuadre + marca + subtítulos) y guarda en PostgreSQL solo metadatos ligeros.
 export async function procesarClip(c) {
+  // Clips de una transmisión en vivo: se cortan del segmento grabado (ya traen sus palabras); el resto, como siempre.
+  const origen = await origenVivo(c.id);
   const url = ytUrl(c.video_id);
-  const palabras = await palabrasDelClip(c, url);
-  const r = await cortarClip(c, url, { palabras });
+  const palabras = origen ? (Array.isArray(c.palabras) ? c.palabras : []) : await palabrasDelClip(c, url);
+  const r = origen ? await cortarDesdeSegmento(c, origen, { palabras }) : await cortarClip(c, url, { palabras });
   const dur = Number(c.fin_seg) - Number(c.inicio_seg);
   await q(
     `UPDATE clips SET estado = CASE WHEN estado = 'publicado' THEN estado ELSE 'listo' END, error = NULL, archivo = $2,
