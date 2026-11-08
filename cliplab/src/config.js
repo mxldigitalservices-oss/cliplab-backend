@@ -51,6 +51,8 @@ export const cfg = {
   headless: process.env.HEADLESS !== "0",
   proxy: process.env.PROXY_URL || "",
   uploadTimeoutMs: num("UPLOAD_TIMEOUT_MS", 600000),
+  humanoFactor: Math.min(2, Math.max(0.05, num("HUMANO_FACTOR", 1))),   // 1 = ritmo normal; <1 más rápido (solo para pruebas)
+  typeBudgetS: num("TYPE_BUDGET_S", 45),                                  // tope de tiempo para teclear una descripción
   typeMin: num("TYPE_MIN_MS", 50),
   typeMax: num("TYPE_MAX_MS", 180),
   captionMax: num("CAPTION_MAX", 600),

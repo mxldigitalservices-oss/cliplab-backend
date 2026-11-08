@@ -10,8 +10,8 @@ export { agenteOcupado };
 
 export function publicarEn(plataforma, clip) {
   const caption = armarCaption(clip);
-  return conSesion(plataforma, `clip${clip.id}`, (page, ev) =>
-    MODULOS[plataforma].publicar(page, { archivo: clip.archivo, caption, real: cfg.publicarReal, ev }));
+  return conSesion(plataforma, `clip${clip.id}`, (page, ev, ctl) =>
+    MODULOS[plataforma].publicar(page, { archivo: clip.archivo, caption, real: cfg.publicarReal, ev, ctl }));
 }
 
 export const probarSesion = plataforma =>

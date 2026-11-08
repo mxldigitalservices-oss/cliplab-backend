@@ -37,15 +37,15 @@ function pintarSesiones(e) {
     input.addEventListener("change", async () => {
       try {
         const txt = await input.files[0].text();
-        await api("/sesiones/" + p, { method: "PUT", body: txt });
-        decir("Sesión de " + NOMBRE[p] + " guardada.");
+        const r = await api("/sesiones/" + p, { method: "PUT", body: txt });
+        decir("Sesión de " + NOMBRE[p] + " guardada" + (r.expira ? " (vence " + fecha(r.expira) + ")" : "") + "." + (r.avisos?.length ? " " + r.avisos.join(" ") : ""));
         await refrescar(true);
       } catch (err) { decir(err.message, true); }
       input.value = "";
     });
     const estado = !s ? el("span", { class: "chip warn" }, "sin sesión")
       : el("span", { class: "chip " + (s.test_ok === false ? "err" : s.test_ok ? "ok" : "") },
-          s.test_ok === true ? "válida · probada " + fecha(s.ultimo_test) : s.test_ok === false ? "falló la prueba" : "cargada " + fecha(s.actualizado_en));
+          (s.test_ok === true ? "válida · probada " + fecha(s.ultimo_test) : s.test_ok === false ? "falló la prueba" : "cargada " + fecha(s.actualizado_en)) + (s.expira_en ? " · vence " + fecha(s.expira_en) : ""));
     box.append(el("div", { class: "row" },
       el("b", {}, NOMBRE[p]), estado,
       el("button", { class: "ghost", onclick: () => input.click() }, s ? "Reemplazar" : "Subir sesión"), input,
@@ -77,7 +77,11 @@ function tarjeta(c) {
         ...Object.keys(NOMBRE).map(p => el("button", { class: "ghost", disabled: ocupado, onclick: publicar([p]) }, "→ " + NOMBRE[p])),
         el("button", { class: "ghost", disabled: ocupado, onclick: () => { if (confirm("¿Publicar en todas las plataformas?")) publicar(Object.keys(NOMBRE))(); } }, "→ Todas"),
         el("button", { class: "ghost", disabled: ocupado, onclick: accion(() => api("/clips/" + c.id + "/recortar", { method: "POST" })) }, "Recortar de nuevo"),
-        c.tiene_archivo ? el("button", { class: "ghost", disabled: ocupado, onclick: accion(() => api("/clips/" + c.id + "/archivo", { method: "DELETE" })) }, "Borrar archivo") : null)));
+        c.tiene_archivo ? el("button", { class: "ghost", disabled: ocupado, onclick: accion(() => api("/clips/" + c.id + "/archivo", { method: "DELETE" })) }, "Borrar archivo") : null,
+        ...(c.pubs || []).filter(p => p.e === "incierto").flatMap(p => [
+          el("button", { class: "ghost", onclick: accion(() => api("/clips/" + c.id + "/resolver", { method: "POST", body: JSON.stringify({ plataforma: p.p, accion: "publicado" }) }), "Marcado como publicado.") }, "Ya se publicó en " + NOMBRE[p.p]),
+          el("button", { class: "ghost", onclick: accion(() => api("/clips/" + c.id + "/resolver", { method: "POST", body: JSON.stringify({ plataforma: p.p, accion: "reintentar" }) }), "Listo para reintentar.") }, "Reintentar " + NOMBRE[p.p])
+        ]))));
 }
 
 // ---------- Refresco ----------

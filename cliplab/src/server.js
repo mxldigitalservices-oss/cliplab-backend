@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { cfg } from "./config.js";
 import { q, db, iniciarDb } from "./db.js";
 import { assertConfig, securityHeaders, rateLimit, isAuthed, requireAuth, login, logout, loginPage, CSP_PANEL } from "./security.js";
-import { PLATAFORMAS, listarSesiones, guardarSesion, borrarSesion, tieneSesion, marcarTest } from "./sesiones.js";
+import { PLATAFORMAS, listarSesiones, guardarSesion, borrarSesion, tieneSesion, marcarTest, normalizarSesion, validarSesion } from "./sesiones.js";
 import { encolar, iniciarWorker, recuperarJobs } from "./queue.js";
 import { hAnalizar, hCortar, hPublicar, ytUrl } from "./pipeline.js";
 import { probarSesion, agenteOcupado } from "./agent/index.js";
@@ -62,10 +62,12 @@ api.use(rateLimit({ windowMs: 60e3, max: 240 }));
 api.put("/sesiones/:p", express.json({ limit: "6mb" }), h(async (req, res) => {
   const p = req.params.p;
   if (!PLATAFORMAS.includes(p)) return res.sendStatus(404);
-  const estado = Array.isArray(req.body?.cookies) ? req.body : req.body?.estado;
-  if (!Array.isArray(estado?.cookies) || !estado.cookies.length) return res.status(400).json({ error: "El archivo no parece una sesión válida (faltan cookies)." });
+  let estado;
+  try { estado = normalizarSesion(req.body); } catch (e) { return res.status(400).json({ error: e.message }); }
+  const v = validarSesion(p, estado);
+  if (!v.ok) return res.status(400).json({ error: v.errores.join(" ") });
   await guardarSesion(p, estado);
-  res.json({ ok: true });
+  res.json({ ok: true, cookies: estado.cookies.length, expira: v.expira, avisos: v.avisos });
 }));
 
 api.use(express.json({ limit: "50kb" }));
@@ -84,7 +86,7 @@ api.get("/clips", h(async (req, res) => {
     SELECT c.id, c.token, c.titulo, c.gancho, c.descripcion, c.cta, c.hashtags, c.inicio_seg, c.fin_seg, c.categoria, c.angulo,
            c.puntaje, c.estado, c.error, c.creado_en, (c.archivo IS NOT NULL) AS tiene_archivo, f.video_id,
            (SELECT json_agg(json_build_object('p', plataforma, 'e', estado, 'd', detalle, 't', creado_en) ORDER BY id)
-              FROM publicaciones WHERE clip_id = c.id) AS pubs
+              FROM publicaciones WHERE clip_id = c.id AND estado <> 'descartado') AS pubs
     FROM clips c JOIN fuentes f ON f.id = c.fuente_id
     ORDER BY c.creado_en DESC, c.id DESC LIMIT 60`);
   res.json(rows);
@@ -113,6 +115,18 @@ api.post("/clips/:id/publicar", rateLimit({ windowMs: 60e3, max: 20 }), h(async 
 }));
 
 const clipOcupado = async id => ["cortando", "publicando"].includes((await q("SELECT estado FROM clips WHERE id=$1", [id])).rows[0]?.estado);
+
+// Resuelve una publicación "incierta": ya se publicó (se cuenta como hecha) o hay que reintentarla.
+api.post("/clips/:id/resolver", h(async (req, res) => {
+  if (!ID.test(req.params.id)) return res.sendStatus(404);
+  const p = req.body?.plataforma, accion = req.body?.accion;
+  if (!PLATAFORMAS.includes(p) || !["publicado", "reintentar"].includes(accion)) return res.status(400).json({ error: "Datos inválidos." });
+  const { rowCount } = await q("UPDATE publicaciones SET estado='descartado' WHERE clip_id=$1 AND plataforma=$2 AND estado='incierto'", [req.params.id, p]);
+  if (!rowCount) return res.status(404).json({ error: "No hay publicación incierta para resolver." });
+  if (accion === "publicado") await q("INSERT INTO publicaciones(clip_id, plataforma, estado, detalle) VALUES($1,$2,'ok','Confirmado manualmente')", [req.params.id, p]);
+  await q("UPDATE clips SET error=NULL WHERE id=$1 AND estado='listo'", [req.params.id]);
+  res.json({ ok: true });
+}));
 
 api.post("/clips/:id/recortar", h(async (req, res) => {
   if (!ID.test(req.params.id)) return res.sendStatus(404);

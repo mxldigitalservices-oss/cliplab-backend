@@ -11,7 +11,7 @@ export async function probar(page) {
   return { ok: !login && !/login|checkpoint/.test(page.url()), detalle: page.url() };
 }
 
-export async function publicar(page, { archivo, caption, real, ev }) {
+export async function publicar(page, { archivo, caption, real, ev, ctl }) {
   await page.goto(cfg.fbReelsUrl, { waitUntil: "domcontentloaded" });
   await pensar();
   if (/login|checkpoint/.test(page.url())) throw vencida();
@@ -38,6 +38,7 @@ export async function publicar(page, { archivo, caption, real, ev }) {
   await ev("listo-para-publicar");
   if (!real) return { simulado: true, detalle: "Modo prueba: se llegó hasta Publicar sin pulsarlo." };
 
+  ctl?.clic();
   await moverYClic(page, publicarBtn);
   const exito = page.getByText(/(Tu reel (se publicó|está publicado)|se está publicando|is being published|Your reel (is|has been) (published|shared))/i).first();
   await esperarHasta(

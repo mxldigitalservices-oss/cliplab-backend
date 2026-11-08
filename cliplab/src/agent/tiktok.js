@@ -11,7 +11,7 @@ export async function probar(page) {
   return { ok: /tiktokstudio/.test(u) && !/login|passport/.test(u), detalle: u };
 }
 
-export async function publicar(page, { archivo, caption, real, ev }) {
+export async function publicar(page, { archivo, caption, real, ev, ctl }) {
   await page.goto(STUDIO, { waitUntil: "domcontentloaded" });
   await pensar();
   if (/login|passport/.test(page.url())) throw vencida();
@@ -35,6 +35,7 @@ export async function publicar(page, { archivo, caption, real, ev }) {
   await ev("listo-para-publicar");
   if (!real) return { simulado: true, detalle: "Modo prueba: se llegó hasta el botón Publicar sin pulsarlo." };
 
+  ctl?.clic();   // desde aquí, un fallo ya no se puede reintentar a ciegas
   await moverYClic(page, post);
   const confirmar = frame.getByRole("button", { name: /(Publicar ahora|Post now)/i }).first();
   await esperarHasta(async () => {

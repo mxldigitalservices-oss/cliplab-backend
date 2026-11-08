@@ -16,7 +16,7 @@ export async function probar(page) {
   return { ok: !login && !/accounts\/login/.test(page.url()), detalle: page.url() };
 }
 
-export async function publicar(page, { archivo, caption, real, ev }) {
+export async function publicar(page, { archivo, caption, real, ev, ctl }) {
   await page.goto("https://www.instagram.com/", { waitUntil: "domcontentloaded" });
   await pensar();
   if (await visible(page.locator('input[name="username"]'), 4000)) throw vencida();
@@ -55,6 +55,7 @@ export async function publicar(page, { archivo, caption, real, ev }) {
   await ev("listo-para-publicar");
   if (!real) return { simulado: true, detalle: "Modo prueba: se llegó hasta Compartir sin pulsarlo." };
 
+  ctl?.clic();
   await moverYClic(page, compartir);
   const exito = page.getByText(/(Se compartió tu reel|Tu reel se ha compartido|Reel compartido|Your reel has been shared|Reel shared)/i).first();
   await esperarHasta(async () => await exito.isVisible(), { etiqueta: "confirmación de que el reel se compartió" });

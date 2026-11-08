@@ -71,10 +71,16 @@ export async function hPublicar(job) {
   const { rows: [c] } = await cargarClip(job.ref_id);
   if (!c || !plats.length) return;
 
-  const { rows: previas } = await q("SELECT plataforma FROM publicaciones WHERE clip_id=$1 AND estado='ok'", [c.id]);
-  const yaHechas = new Set(previas.map(r => r.plataforma));
-  const pendientes = plats.filter(x => !yaHechas.has(x));
-  if (!pendientes.length) return;   // idempotente: nada que publicar, no se vuelve a cortar
+  const { rows: previas } = await q("SELECT plataforma, estado FROM publicaciones WHERE clip_id=$1 AND estado IN ('ok','incierto')", [c.id]);
+  const yaHechas = new Set(previas.filter(r => r.estado === "ok").map(r => r.plataforma));
+  // Un "incierto" (se pulsó Publicar pero no se confirmó) bloquea el reintento hasta que la persona lo resuelva en el panel.
+  const inciertas = new Set(previas.filter(r => r.estado === "incierto").map(r => r.plataforma));
+  const pendientes = plats.filter(x => !yaHechas.has(x) && !inciertas.has(x));
+  const fallos = plats.filter(x => inciertas.has(x) && !yaHechas.has(x)).map(x => `${x}: resultado incierto, verifica en la plataforma y confírmalo en el panel`);
+  if (!pendientes.length) {   // idempotente: nada que publicar, no se vuelve a cortar
+    if (fallos.length) await q("UPDATE clips SET estado='listo', error=$2 WHERE id=$1 AND estado <> 'publicado'", [c.id, fallos.join(" | ").slice(0, 500)]);
+    return;
+  }
 
   if (!c.archivo || !existsSync(c.archivo)) {   // el archivo fue purgado: se regenera con los timestamps guardados
     await q("UPDATE clips SET estado='cortando', error=NULL WHERE id=$1", [c.id]);
@@ -86,10 +92,9 @@ export async function hPublicar(job) {
   }
   await q("UPDATE clips SET estado='publicando', error=NULL WHERE id=$1", [c.id]);
 
-  const fallos = [];
   let primera = true;
   for (const p of pendientes) {
-    const { rows: [dia] } = await q("SELECT count(*)::int AS n FROM publicaciones WHERE plataforma=$1 AND estado='ok' AND creado_en > now() - interval '24 hours'", [p]);
+    const { rows: [dia] } = await q("SELECT count(*)::int AS n FROM publicaciones WHERE plataforma=$1 AND estado IN ('ok','incierto') AND creado_en > now() - interval '24 hours'", [p]);
     if (dia.n >= cfg.maxPubDia) { fallos.push(`${p}: límite diario (${cfg.maxPubDia}) alcanzado`); continue; }
     if (!primera) await dormir(rnd(cfg.pausaPlataformasS[0], cfg.pausaPlataformasS[1]) * 1000);
     primera = false;
@@ -99,8 +104,9 @@ export async function hPublicar(job) {
       if (r.simulado) fallos.push(`${p}: modo prueba (no se publicó)`);
     } catch (e) {
       const msg = String(e.message).split("\n")[0].slice(0, 300);   // sin los banners multilínea de Playwright
-      await q("INSERT INTO publicaciones(clip_id, plataforma, estado, detalle) VALUES($1,$2,'error',$3)", [c.id, p, msg]);
-      fallos.push(`${p}: ${msg}`);
+      const estado = e.incierto ? "incierto" : "error";
+      await q("INSERT INTO publicaciones(clip_id, plataforma, estado, detalle) VALUES($1,$2,$3,$4)", [c.id, p, estado, e.incierto ? `Se pulsó Publicar pero no se confirmó: ${msg}` : msg]);
+      fallos.push(e.incierto ? `${p}: resultado incierto, verifica en la plataforma y confírmalo en el panel` : `${p}: ${msg}`);
     }
   }
 
