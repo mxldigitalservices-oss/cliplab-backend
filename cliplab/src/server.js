@@ -17,6 +17,7 @@ import { rutasVivo } from "./rutas-vivo.js";
 import { rutasCookies } from "./rutas-cookies.js";
 import { prepararCookies } from "./cookies-repo.js";
 import { hAutoVariantes } from "./auto-variantes.js";
+import { prepararCookiesYoutube } from "./yt-cookies.js";
 
 assertConfig();   // sin MASTER_KEY no arranca
 process.on("unhandledRejection", e => console.error("unhandledRejection:", e));
@@ -182,6 +183,7 @@ app.use((e, req, res, next) => {
 await iniciarDb();
 await recuperarJobs();
 await prepararVivo();   // tablas de vivo + reanuda capturas que seguían en curso
+prepararCookiesYoutube();   // cookies de YouTube (YT_COOKIES_B64) para que yt-dlp no sea bloqueado
 await prepararCookies().catch(e => console.error("cookies:", e.message));   // importa cookies/*.json si cambiaron
 await limpiar().catch(console.error);
 setInterval(() => limpiar().catch(console.error), 600e3).unref();   // cada 10 min
