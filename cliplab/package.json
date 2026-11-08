@@ -1,1 +1,16 @@
-{"name":"cliplab-backend","version":"1.0.0","type":"module","scripts":{"start":"node src/server.js"},"dependencies":{"express":"^4.21.0","pg":"^8.13.0"},"engines":{"node":">=20"}}
+{
+  "name": "cliplab",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "login": "node scripts/login-local.js"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "pg": "8.13.1",
+    "playwright": "1.49.1"
+  },
+  "engines": { "node": ">=20" }
+}

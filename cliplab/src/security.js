@@ -1,20 +1,20 @@
-// src/security.js — Búnker: acceso, anti-indexación, límites y URLs firmadas.
+// Búnker: acceso con llave maestra, anti-indexación, límites de uso.
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { cfg } from "./config.js";
 
 const COOKIE = "cl_session";
 const SESION_SEG = 12 * 3600;
 const MAX_FALLOS = 10;
 const VENTANA_MS = 15 * 60e3;
-
-let MASTER = "";
 let SKEY = null;
+
+export const CSP_PANEL = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const CSP_LOGIN = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
 // Falla cerrada: sin llave maestra el servidor NO arranca.
 export function assertConfig() {
-  const k = process.env.MASTER_KEY || process.env.API_KEY || "";
-  if (k.length < 16) throw new Error("MASTER_KEY ausente o menor de 16 caracteres: el búnker no arranca sin llave maestra.");
-  MASTER = k;
-  SKEY = createHmac("sha256", k).update("cliplab/v1").digest();
+  if (cfg.masterKey.length < 16) throw new Error("MASTER_KEY ausente o menor de 16 caracteres: el búnker no arranca sin llave maestra.");
+  SKEY = createHmac("sha256", cfg.masterKey).update("cliplab/v2/firma").digest();
 }
 
 const sha = s => createHash("sha256").update(String(s)).digest();
@@ -47,23 +47,7 @@ export function securityHeaders(req, res, next) {
   next();
 }
 
-// ---------- CORS cerrado: solo orígenes listados en ALLOWED_ORIGIN (coma). "*" se ignora. ----------
-export function cors(req, res, next) {
-  const permitidos = (process.env.ALLOWED_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);
-  const o = req.get("origin");
-  if (o && permitidos.includes(o)) {
-    res.set({
-      "Access-Control-Allow-Origin": o,
-      "Access-Control-Allow-Credentials": "true",
-      "Access-Control-Allow-Headers": "Content-Type,x-api-key",
-      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-      "Vary": "Origin"
-    });
-  }
-  return req.method === "OPTIONS" ? res.sendStatus(204) : next();
-}
-
-// ---------- Límite de peticiones en memoria (sin dependencias) ----------
+// ---------- Límite de peticiones en memoria ----------
 export function rateLimit({ windowMs, max }) {
   const hits = new Map();
   setInterval(() => { const t = Date.now(); for (const [k, v] of hits) if (v.reset <= t) hits.delete(k); }, Math.min(windowMs, 60e3)).unref();
@@ -96,7 +80,7 @@ const sesionValida = v => {
 
 export function isAuthed(req) {
   const k = req.get("x-api-key");
-  if (k) return same(k, MASTER);
+  if (k) return same(k, cfg.masterKey);
   const c = leerCookie(req, COOKIE);
   return !!c && sesionValida(c);
 }
@@ -110,8 +94,6 @@ export function requireAuth(req, res, next) {
 }
 
 // ---------- Login / logout ----------
-const CSP_LOGIN = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
-
 export function loginPage(res, mensaje = "", status = 200) {
   res.status(status).set("Content-Security-Policy", CSP_LOGIN).type("html").send(`<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -136,7 +118,7 @@ p{margin:0;color:#f27c6b;min-height:1.2em;font-size:.9rem}
 export function login(req, res) {
   if (bloqueado(req.ip)) return loginPage(res, "Demasiados intentos. Espera 15 minutos.", 429);
   const clave = typeof req.body?.key === "string" ? req.body.key : "";
-  if (!clave || !same(clave, MASTER)) { falla(req.ip); return res.redirect(303, "/?e=1"); }
+  if (!clave || !same(clave, cfg.masterKey)) { falla(req.ip); return res.redirect(303, "/?e=1"); }
   const exp = Math.floor(Date.now() / 1000) + SESION_SEG;
   res.cookie(COOKIE, `${exp}.${sign("s:" + exp)}`, {
     httpOnly: true, sameSite: "strict", secure: req.secure, maxAge: SESION_SEG * 1000, path: "/"
@@ -147,25 +129,4 @@ export function login(req, res) {
 export function logout(req, res) {
   res.clearCookie(COOKIE, { path: "/" });
   res.redirect(303, "/");
-}
-
-// ---------- CSP del panel (el HTML usa scripts/estilos en línea y Google Fonts) ----------
-export function panelCsp() {
-  let extra = "";
-  try { if (process.env.PUBLIC_URL) extra = " " + new URL(process.env.PUBLIC_URL).origin; } catch {}
-  return "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-    "font-src https://fonts.gstatic.com; img-src 'self' data: https://i.ytimg.com; media-src 'self'" + extra +
-    "; connect-src 'self'" + extra + "; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
-}
-
-// ---------- URLs de video firmadas con expiración ----------
-export function mediaUrl(base, token, ttl = 3600) {
-  const exp = Math.floor(Date.now() / 1000) + ttl;
-  return `${base}/media/${token}.mp4?exp=${exp}&sig=${sign(`m:${token}:${exp}`)}`;
-}
-
-export function verifyMedia(token, exp, sig) {
-  if (typeof exp !== "string" || typeof sig !== "string" || !/^\d{9,12}$/.test(exp)) return false;
-  if (Number(exp) < Date.now() / 1000) return false;
-  return same(sign(`m:${token}:${exp}`), sig);
 }
