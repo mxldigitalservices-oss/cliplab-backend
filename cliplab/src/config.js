@@ -28,6 +28,22 @@ export const cfg = {
   clipMin: num("CLIP_MIN_SEG", 15),
   clipMax: num("CLIP_MAX_SEG", 90),
   reencuadre: process.env.REENCUADRE === "crop" ? "crop" : "blur",
+  crf: num("CRF", 23),
+  // Marca de agua (coordenadas fijas sobre el lienzo 720x1280; se validan contra las zonas de la interfaz)
+  logoPath: process.env.LOGO_PATH || "",
+  logoAncho: num("LOGO_ANCHO", 130),
+  logoX: num("LOGO_X", 36),
+  logoY: num("LOGO_Y", 150),
+  logoOpacidad: Math.min(1, Math.max(0.1, num("LOGO_OPACIDAD", 0.9))),
+  // Subtítulos dinámicos (ASS)
+  subtitulos: process.env.SUBTITULOS !== "0",
+  subMaxPalabras: num("SUB_MAX_PALABRAS", 3),
+  subMargenV: num("SUB_MARGEN_V", 360),
+  subTamano: num("SUB_TAMANO", 64),
+  subIdiomas: process.env.SUB_IDIOMAS || "es-orig,en-orig,es,en",
+  fontsDir: process.env.FONTS_DIR || "/usr/share/fonts/truetype/dejavu",
+  // Janitor
+  borrarAlPublicar: process.env.BORRAR_AL_PUBLICAR !== "0",
   ffmpegThreads: num("FFMPEG_THREADS", 2),
   ffmpegTimeoutMs: num("FFMPEG_TIMEOUT_MS", 600000),
   ytCookies: process.env.YT_COOKIES || "",

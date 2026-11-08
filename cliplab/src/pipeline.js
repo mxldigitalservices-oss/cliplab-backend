@@ -5,10 +5,11 @@ import { cfg } from "./config.js";
 import { encolar } from "./queue.js";
 import { analizar } from "./gemini.js";
 import { cortarClip } from "./video.js";
+import { palabrasDelClip } from "./transcripcion.js";
 import { publicarEn } from "./agent/index.js";
 import { dormir, rnd } from "./agent/humano.js";
 import { PLATAFORMAS } from "./sesiones.js";
-import { borrarArchivoClip } from "./janitor.js";
+import { borrarArchivoClip, limpiar } from "./janitor.js";
 
 export const ytUrl = id => `https://www.youtube.com/watch?v=${id}`;
 const ultimo = job => job.intentos >= job.max_intentos;
@@ -36,16 +37,31 @@ export async function hAnalizar(job) {
 
 const cargarClip = id => q("SELECT c.*, f.video_id FROM clips c JOIN fuentes f ON f.id = c.fuente_id WHERE c.id = $1", [id]);
 
+// Corta (reencuadre + marca + subtítulos) y guarda en PostgreSQL solo metadatos ligeros.
+async function procesarClip(c) {
+  const url = ytUrl(c.video_id);
+  const palabras = await palabrasDelClip(c, url);
+  const r = await cortarClip(c, url, { palabras });
+  const dur = Number(c.fin_seg) - Number(c.inicio_seg);
+  await q(
+    `UPDATE clips SET estado = CASE WHEN estado = 'publicado' THEN estado ELSE 'listo' END, error = NULL, archivo = $2,
+       tam_bytes = $3, duracion_seg = $4, procesado_ms = $5, con_subtitulos = $6, con_marca = $7,
+       palabras = COALESCE($8::jsonb, palabras), archivo_borrado_en = NULL WHERE id = $1`,
+    [c.id, r.archivo, r.bytes, dur, r.ms, r.conSubtitulos, r.conMarca, palabras.length ? JSON.stringify(palabras) : null]
+  );
+  return r.archivo;
+}
+
 export async function hCortar(job) {
   const { rows: [c] } = await cargarClip(job.ref_id);
   if (!c) return;
-  await q("UPDATE clips SET estado='cortando', error=NULL WHERE id=$1", [c.id]);
+  await limpiar().catch(() => {});   // libera disco antes de empezar a generar otro archivo
+  await q("UPDATE clips SET estado='cortando', error=NULL WHERE id=$1 AND estado <> 'publicado'", [c.id]);
   try {
-    const archivo = await cortarClip(c, ytUrl(c.video_id));
-    await q("UPDATE clips SET estado='listo', archivo=$2 WHERE id=$1", [c.id, archivo]);
+    await procesarClip(c);
     if (c.auto_plataformas?.length) await encolar("publicar", c.id, { plataformas: c.auto_plataformas }, 0, 1);
   } catch (e) {
-    if (ultimo(job)) await q("UPDATE clips SET estado='error', error=$2 WHERE id=$1", [c.id, e.message.slice(0, 400)]);
+    if (ultimo(job)) await q("UPDATE clips SET estado='error', error=$2 WHERE id=$1 AND estado <> 'publicado'", [c.id, e.message.slice(0, 400)]);
     throw e;
   }
 }
@@ -62,8 +78,11 @@ export async function hPublicar(job) {
 
   if (!c.archivo || !existsSync(c.archivo)) {   // el archivo fue purgado: se regenera con los timestamps guardados
     await q("UPDATE clips SET estado='cortando', error=NULL WHERE id=$1", [c.id]);
-    c.archivo = await cortarClip(c, ytUrl(c.video_id));
-    await q("UPDATE clips SET archivo=$2 WHERE id=$1", [c.id, c.archivo]);
+    try { c.archivo = await procesarClip(c); }
+    catch (e) {   // sin esto el clip se quedaba "cortando" para siempre
+      await q("UPDATE clips SET estado='error', error=$2 WHERE id=$1", [c.id, String(e.message).slice(0, 400)]);
+      throw e;
+    }
   }
   await q("UPDATE clips SET estado='publicando', error=NULL WHERE id=$1", [c.id]);
 
@@ -89,7 +108,7 @@ export async function hPublicar(job) {
   const hechas = new Set(oks.map(r => r.plataforma));
   if (plats.every(p => hechas.has(p))) {
     await q("UPDATE clips SET estado='publicado', error=NULL WHERE id=$1", [c.id]);
-    await borrarArchivoClip(c.id);   // auto-purga: ya está publicado en todas las plataformas pedidas
+    if (cfg.borrarAlPublicar) await borrarArchivoClip(c.id);   // salida completa: el video pesado se borra YA; quedan los metadatos
   } else {
     await q("UPDATE clips SET estado='listo', error=$2 WHERE id=$1", [c.id, fallos.join(" | ").slice(0, 500) || null]);
   }

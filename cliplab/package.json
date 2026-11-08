@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "login": "node scripts/login-local.js",
-    "test": "node --test tests/gemini.test.js",
+    "test": "node --test",
     "gemini:probar": "node scripts/probar-gemini.js"
   },
   "dependencies": {

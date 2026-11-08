@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS clips (
   auto_plataformas TEXT[] NOT NULL DEFAULT '{}',
   creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Metadatos ligeros del procesamiento (el video pesado nunca se guarda en la base).
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS palabras JSONB;
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS tam_bytes BIGINT;
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS duracion_seg NUMERIC(10,2);
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS procesado_ms INT;
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS con_subtitulos BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS con_marca BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE clips ADD COLUMN IF NOT EXISTS archivo_borrado_en TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS clips_token_idx ON clips (token);
 CREATE INDEX IF NOT EXISTS clips_fuente_idx ON clips (fuente_id);
 

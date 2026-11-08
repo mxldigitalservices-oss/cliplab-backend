@@ -112,8 +112,11 @@ api.post("/clips/:id/publicar", rateLimit({ windowMs: 60e3, max: 20 }), h(async 
   res.status(202).json({ ok: true });
 }));
 
+const clipOcupado = async id => ["cortando", "publicando"].includes((await q("SELECT estado FROM clips WHERE id=$1", [id])).rows[0]?.estado);
+
 api.post("/clips/:id/recortar", h(async (req, res) => {
   if (!ID.test(req.params.id)) return res.sendStatus(404);
+  if (await clipOcupado(req.params.id)) return res.status(409).json({ error: "El clip está ocupado." });
   await borrarArchivoClip(req.params.id, "pendiente");
   await q("UPDATE clips SET estado='pendiente', error=NULL WHERE id=$1 AND estado <> 'publicado'", [req.params.id]);
   await encolar("cortar", Number(req.params.id), {}, 0, 2);
@@ -122,6 +125,7 @@ api.post("/clips/:id/recortar", h(async (req, res) => {
 
 api.delete("/clips/:id/archivo", h(async (req, res) => {
   if (!ID.test(req.params.id)) return res.sendStatus(404);
+  if (await clipOcupado(req.params.id)) return res.status(409).json({ error: "El clip está ocupado." });
   await borrarArchivoClip(req.params.id);
   res.json({ ok: true });
 }));
@@ -153,7 +157,7 @@ app.use((e, req, res, next) => {
 await iniciarDb();
 await recuperarJobs();
 await limpiar().catch(console.error);
-setInterval(() => limpiar().catch(console.error), 3600e3).unref();
+setInterval(() => limpiar().catch(console.error), 600e3).unref();   // cada 10 min
 spawn("yt-dlp", ["-U"], { stdio: "ignore" }).on("error", () => {});   // YouTube cambia seguido: se actualiza al arrancar
 
 const despachar = job => ({ analizar: hAnalizar, cortar: hCortar }[job.tipo])(job);
