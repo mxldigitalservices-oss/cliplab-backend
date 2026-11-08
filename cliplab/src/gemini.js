@@ -34,6 +34,16 @@ let registrar = (rol, http, ms, error) =>
     .catch(e => console.error("gemini_uso:", e.message));
 export const _test = { fijarRegistro: fn => { registrar = fn; }, reiniciar: () => { for (const e of Object.values(estado)) Object.assign(e, { frioHasta: 0, usos: 0, fallos: 0 }); } };
 
+// Gemini 3.8: los parámetros de muestreo están obsoletos. Se quitan aquí, en un solo punto, para que ningún
+// llamador (gemini.js, transcripcion.js, vivo.js…) los envíe aunque los declare.
+const SIN_MUESTREO = ["temperature", "topP", "topK", "candidateCount"];
+const limpiarCuerpo = c => {
+  if (!c?.generationConfig) return c;
+  const g = { ...c.generationConfig };
+  for (const k of SIN_MUESTREO) delete g[k];
+  return { ...c, generationConfig: g };
+};
+
 const enfriar = (rol, ms) => { estado[rol].frioHasta = Date.now() + ms; estado[rol].fallos++; };
 const retryAfterMs = (r, porDefecto) => {
   const v = Number(r.headers?.get?.("retry-after"));
@@ -59,7 +69,7 @@ export async function generar(rol, cuerpo, { timeoutMs = 300000 } = {}) {
       r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": llaveDe(usable) },
-        body: JSON.stringify(cuerpo),
+        body: JSON.stringify(limpiarCuerpo(cuerpo)),
         signal: AbortSignal.timeout(timeoutMs)
       });
     } catch (e) {   // red caída o tiempo agotado: se enfría esa llave un momento y se relevan

@@ -19,7 +19,7 @@ export const cfg = {
     analisis: llave("GEMINI_API_KEY_3"),   // Análisis de transcripciones y extracción de fragmentos
     respaldo: llave("GEMINI_API_KEY_4")    // Respaldo y verificación cruzada
   },
-  geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash",
+  geminiModel: process.env.GEMINI_MODEL || "gemini-3.8-flash",
   clipsDir: process.env.CLIPS_DIR || "/tmp/clips",
   dataDir: process.env.DATA_DIR || "/tmp/cliplab-data",
   ttlHoras: num("TTL_HORAS", 48),
