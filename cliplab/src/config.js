@@ -58,5 +58,15 @@ export const cfg = {
   captionMax: num("CAPTION_MAX", 600),
   pausaPlataformasS: [num("PAUSA_MIN_S", 20), num("PAUSA_MAX_S", 60)],
   maxPubDia: num("MAX_PUB_DIA", 10),
-  fbReelsUrl: process.env.FB_REELS_URL || "https://www.facebook.com/reels/create"
+  fbReelsUrl: process.env.FB_REELS_URL || "https://www.facebook.com/reels/create",
+  // ---- Fase 4: lotes y reciclaje multi-ángulo ----
+  dbPoolMax: Math.max(5, Math.round(num("DB_POOL_MAX", 8))),
+  loteTam: Math.min(20, Math.max(10, Math.round(num("LOTE_TAMANO", 10)))),   // elementos por ciclo: siempre entre 10 y 20
+  lotePausaS: Math.max(0, num("LOTE_PAUSA_S", 30)),                          // respiro entre ciclos (libera memoria y disco)
+  loteTickMs: Math.max(500, num("LOTE_TICK_MS", 5000)),
+  loteMaxItems: Math.max(1, Math.round(num("LOTE_MAX_ITEMS", 200))),
+  variantesMax: Math.min(20, Math.max(1, Math.round(num("VARIANTES_MAX", 20)))),
+  protegerHoras: Math.max(0, num("PROTEGER_HORAS", 3)),                      // el janitor no borra el video base si una variante sale en menos de N horas
+  aplazoMin: Math.max(1, Math.round(num("APLAZO_MIN", 120))),                // reintento tras alcanzar el límite diario
+  zonaHoraria: process.env.ZONA_PUBLICACION || "America/Santo_Domingo"
 };

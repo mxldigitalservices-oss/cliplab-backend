@@ -10,6 +10,8 @@ import { encolar, iniciarWorker, recuperarJobs } from "./queue.js";
 import { hAnalizar, hCortar, hPublicar, ytUrl } from "./pipeline.js";
 import { probarSesion, agenteOcupado } from "./agent/index.js";
 import { limpiar, usoDiscoMb, borrarArchivoClip } from "./janitor.js";
+import { hLoteItem, iniciarDespachador } from "./lotes.js";
+import { rutasLotes } from "./rutas-lotes.js";
 
 assertConfig();   // sin MASTER_KEY no arranca
 process.on("unhandledRejection", e => console.error("unhandledRejection:", e));
@@ -86,7 +88,7 @@ api.get("/clips", h(async (req, res) => {
     SELECT c.id, c.token, c.titulo, c.gancho, c.descripcion, c.cta, c.hashtags, c.inicio_seg, c.fin_seg, c.categoria, c.angulo,
            c.puntaje, c.estado, c.error, c.creado_en, (c.archivo IS NOT NULL) AS tiene_archivo, f.video_id,
            (SELECT json_agg(json_build_object('p', plataforma, 'e', estado, 'd', detalle, 't', creado_en) ORDER BY id)
-              FROM publicaciones WHERE clip_id = c.id AND estado <> 'descartado') AS pubs
+              FROM publicaciones WHERE clip_id = c.id AND variante_id IS NULL AND estado <> 'descartado') AS pubs
     FROM clips c JOIN fuentes f ON f.id = c.fuente_id
     ORDER BY c.creado_en DESC, c.id DESC LIMIT 60`);
   res.json(rows);
@@ -121,7 +123,7 @@ api.post("/clips/:id/resolver", h(async (req, res) => {
   if (!ID.test(req.params.id)) return res.sendStatus(404);
   const p = req.body?.plataforma, accion = req.body?.accion;
   if (!PLATAFORMAS.includes(p) || !["publicado", "reintentar"].includes(accion)) return res.status(400).json({ error: "Datos inválidos." });
-  const { rowCount } = await q("UPDATE publicaciones SET estado='descartado' WHERE clip_id=$1 AND plataforma=$2 AND estado='incierto'", [req.params.id, p]);
+  const { rowCount } = await q("UPDATE publicaciones SET estado='descartado' WHERE clip_id=$1 AND variante_id IS NULL AND plataforma=$2 AND estado='incierto'", [req.params.id, p]);
   if (!rowCount) return res.status(404).json({ error: "No hay publicación incierta para resolver." });
   if (accion === "publicado") await q("INSERT INTO publicaciones(clip_id, plataforma, estado, detalle) VALUES($1,$2,'ok','Confirmado manualmente')", [req.params.id, p]);
   await q("UPDATE clips SET error=NULL WHERE id=$1 AND estado='listo'", [req.params.id]);
@@ -131,7 +133,7 @@ api.post("/clips/:id/resolver", h(async (req, res) => {
 api.post("/clips/:id/recortar", h(async (req, res) => {
   if (!ID.test(req.params.id)) return res.sendStatus(404);
   if (await clipOcupado(req.params.id)) return res.status(409).json({ error: "El clip está ocupado." });
-  await borrarArchivoClip(req.params.id, "pendiente");
+  await borrarArchivoClip(req.params.id, "pendiente", { forzar: true });
   await q("UPDATE clips SET estado='pendiente', error=NULL WHERE id=$1 AND estado <> 'publicado'", [req.params.id]);
   await encolar("cortar", Number(req.params.id), {}, 0, 2);
   res.status(202).json({ ok: true });
@@ -140,7 +142,7 @@ api.post("/clips/:id/recortar", h(async (req, res) => {
 api.delete("/clips/:id/archivo", h(async (req, res) => {
   if (!ID.test(req.params.id)) return res.sendStatus(404);
   if (await clipOcupado(req.params.id)) return res.status(409).json({ error: "El clip está ocupado." });
-  await borrarArchivoClip(req.params.id);
+  await borrarArchivoClip(req.params.id, "expirado", { forzar: true });
   res.json({ ok: true });
 }));
 
@@ -159,6 +161,7 @@ api.delete("/sesiones/:p", h(async (req, res) => {
   res.json({ ok: true });
 }));
 
+api.use(rutasLotes);   // Fase 4: lotes, ciclos, reciclaje y variantes
 app.use("/api", api);
 app.use((req, res) => res.status(404).json({ error: "No encontrado." }));
 app.use((e, req, res, next) => {
@@ -174,9 +177,11 @@ await limpiar().catch(console.error);
 setInterval(() => limpiar().catch(console.error), 600e3).unref();   // cada 10 min
 spawn("yt-dlp", ["-U"], { stdio: "ignore" }).on("error", () => {});   // YouTube cambia seguido: se actualiza al arrancar
 
-const despachar = job => ({ analizar: hAnalizar, cortar: hCortar }[job.tipo])(job);
-iniciarWorker("medios", ["analizar", "cortar"], despachar);
-iniciarWorker("agente", ["publicar"], hPublicar, 4000);
+// Los elementos de lote comparten worker con su equivalente (medios / agente): FFmpeg y el navegador nunca corren dos tareas a la vez.
+const despachar = job => ({ analizar: hAnalizar, cortar: hCortar, lote_medios: hLoteItem }[job.tipo])(job);
+iniciarWorker("medios", ["analizar", "cortar", "lote_medios"], despachar);
+iniciarWorker("agente", ["publicar", "lote_agente"], job => (job.tipo === "publicar" ? hPublicar : hLoteItem)(job), 4000);
+const detenerLotes = iniciarDespachador();   // ciclos de 10-20 elementos
 
 const srv = app.listen(cfg.port, () => console.log(`ClipLab listo (modo ${cfg.publicarReal ? "REAL" : "PRUEBA"})`));
 srv.keepAliveTimeout = 65e3;
@@ -184,6 +189,7 @@ srv.headersTimeout = 66e3;
 
 const apagar = () => {
   console.log("Apagando…");
+  detenerLotes();
   srv.close(() => db.end().finally(() => process.exit(0)));
   setTimeout(() => process.exit(0), 10e3).unref();
 };

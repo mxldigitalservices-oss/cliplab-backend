@@ -127,7 +127,7 @@ export const toSec = t => {
 };
 
 const limpiarTag = t => "#" + String(t).replace(/^#+/, "").replace(/[^\p{L}\p{N}_]/gu, "");
-const tags = h => [...new Set((Array.isArray(h) ? h : []).map(limpiarTag).filter(t => t.length > 1))].slice(0, 6);
+export const tags = h => [...new Set((Array.isArray(h) ? h : []).map(limpiarTag).filter(t => t.length > 1))].slice(0, 6);
 
 export function validar(raw) {
   const L = (Array.isArray(raw) ? raw : [])

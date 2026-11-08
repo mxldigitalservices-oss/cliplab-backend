@@ -13,8 +13,8 @@ export const encolar = (tipo, refId, payload = {}, retrasoMs = 0, maxIntentos = 
 // Un reinicio nunca repite una publicación a ciegas (podría duplicar el post).
 export async function recuperarJobs() {
   await q(`UPDATE jobs SET
-      estado = CASE WHEN tipo = 'publicar' THEN 'error' ELSE 'pendiente' END,
-      error = CASE WHEN tipo = 'publicar' THEN 'Interrumpido por un reinicio: verifica en la plataforma antes de reintentar.' ELSE error END
+      estado = CASE WHEN tipo IN ('publicar','lote_agente') THEN 'error' ELSE 'pendiente' END,
+      error = CASE WHEN tipo IN ('publicar','lote_agente') THEN 'Interrumpido por un reinicio: verifica en la plataforma antes de reintentar.' ELSE error END
     WHERE estado = 'corriendo'`);
   await q(`UPDATE clips SET estado = 'listo', error = 'Publicación interrumpida por un reinicio: verifica en la plataforma.' WHERE estado = 'publicando'`);
   await q(`UPDATE clips SET estado = 'pendiente' WHERE estado = 'cortando'`);

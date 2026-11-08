@@ -38,7 +38,7 @@ export async function hAnalizar(job) {
 const cargarClip = id => q("SELECT c.*, f.video_id FROM clips c JOIN fuentes f ON f.id = c.fuente_id WHERE c.id = $1", [id]);
 
 // Corta (reencuadre + marca + subtítulos) y guarda en PostgreSQL solo metadatos ligeros.
-async function procesarClip(c) {
+export async function procesarClip(c) {
   const url = ytUrl(c.video_id);
   const palabras = await palabrasDelClip(c, url);
   const r = await cortarClip(c, url, { palabras });
@@ -50,6 +50,18 @@ async function procesarClip(c) {
     [c.id, r.archivo, r.bytes, dur, r.ms, r.conSubtitulos, r.conMarca, palabras.length ? JSON.stringify(palabras) : null]
   );
   return r.archivo;
+}
+
+// Garantiza que el video base exista en disco (lo regenera con los tiempos guardados si fue purgado).
+// No pisa el estado "publicado" del clip: las variantes reciclan clips que ya salieron.
+export async function asegurarArchivoClip(c) {
+  if (c.archivo && existsSync(c.archivo)) return c.archivo;
+  await q("UPDATE clips SET estado = CASE WHEN estado = 'publicado' THEN estado ELSE 'cortando' END, error = NULL WHERE id=$1", [c.id]);
+  try { return await procesarClip(c); }
+  catch (e) {
+    await q("UPDATE clips SET estado = CASE WHEN estado = 'publicado' THEN estado ELSE 'error' END, error=$2 WHERE id=$1", [c.id, String(e.message).slice(0, 400)]);
+    throw e;
+  }
 }
 
 export async function hCortar(job) {
@@ -71,7 +83,7 @@ export async function hPublicar(job) {
   const { rows: [c] } = await cargarClip(job.ref_id);
   if (!c || !plats.length) return;
 
-  const { rows: previas } = await q("SELECT plataforma, estado FROM publicaciones WHERE clip_id=$1 AND estado IN ('ok','incierto')", [c.id]);
+  const { rows: previas } = await q("SELECT plataforma, estado FROM publicaciones WHERE clip_id=$1 AND variante_id IS NULL AND estado IN ('ok','incierto')", [c.id]);
   const yaHechas = new Set(previas.filter(r => r.estado === "ok").map(r => r.plataforma));
   // Un "incierto" (se pulsó Publicar pero no se confirmó) bloquea el reintento hasta que la persona lo resuelva en el panel.
   const inciertas = new Set(previas.filter(r => r.estado === "incierto").map(r => r.plataforma));
@@ -110,7 +122,7 @@ export async function hPublicar(job) {
     }
   }
 
-  const { rows: oks } = await q("SELECT plataforma FROM publicaciones WHERE clip_id=$1 AND estado='ok'", [c.id]);
+  const { rows: oks } = await q("SELECT plataforma FROM publicaciones WHERE clip_id=$1 AND variante_id IS NULL AND estado='ok'", [c.id]);
   const hechas = new Set(oks.map(r => r.plataforma));
   if (plats.every(p => hechas.has(p))) {
     await q("UPDATE clips SET estado='publicado', error=NULL WHERE id=$1", [c.id]);
