@@ -77,12 +77,18 @@ export async function prepararCookies() {
     const r = await importarTodas();
     console.log("Cookies:", r.map(x => `${x.plataforma}=${x.estado}`).join(" "));
   }
+  if (process.env.COOKIES_GITHUB_TOKEN) {   // GitHub como fuente: se trae al arrancar y luego cada COOKIES_SYNC_MIN minutos
+    const log = tag => r => console.log(`Cookies (GitHub${tag}):`, (r.importadas || []).map(x => `${x.plataforma}=${x.estado}`).join(" "));
+    await sincronizar().then(log("")).catch(e => console.error("Cookies (GitHub):", e.message));
+    const min = Number(process.env.COOKIES_SYNC_MIN ?? 15);
+    if (min > 0) setInterval(() => sincronizar().then(log(" auto")).catch(e => console.error("Cookies (GitHub auto):", e.message)), min * 60e3).unref();
+  }
 }
 
 // Solo importa si el archivo cambió desde la última importación: así un reinicio no pisa cookies más frescas
 // que el agente renovó en la base tras publicar (guardarSesion con nueva=false). forzar=true ignora esa guarda.
-export async function importar(plataforma, { forzar = false } = {}) {
-  const a = await leerArchivo(plataforma).catch(e => ({ error: e.message }));
+export async function importar(plataforma, { forzar = false, archivo } = {}) {
+  const a = archivo ?? await leerArchivo(plataforma).catch(e => ({ error: e.message }));
   if (!a) return { plataforma, estado: "sin_archivo" };
   if (a.error) return { plataforma, estado: "invalida", errores: [a.error] };
   let estado;
@@ -143,16 +149,48 @@ export async function cookieHeader(plataforma, urlDestino) {
 
 // ---------- Sincronización opcional con GitHub ----------
 
+// Lee <plataforma>.json del repo con la API de GitHub (token fine-grained de solo lectura: Contents → Read-only).
+// Funciona en Railway porque no necesita .git. El token nunca se registra ni aparece en mensajes de error.
+async function bajarDeGithub(plataforma) {
+  const repo = process.env.COOKIES_GITHUB_REPO || "mxldigitalservices-oss/cliplab-backend";
+  const ruta = (process.env.COOKIES_GITHUB_RUTA || "cliplab/cookies").replace(/^\/+|\/+$/g, "");
+  const rama = process.env.COOKIES_GITHUB_RAMA || "main";
+  const r = await fetch(`https://api.github.com/repos/${repo}/contents/${ruta}/${plataforma}.json?ref=${encodeURIComponent(rama)}`, {
+    headers: { Authorization: `Bearer ${process.env.COOKIES_GITHUB_TOKEN}`, Accept: "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "cliplab" },
+    signal: AbortSignal.timeout(20000)
+  });
+  if (r.status === 404) return null;
+  if (r.status === 401 || r.status === 403) throw new Error(`GitHub rechazó el token (${r.status}): revisa que sea válido y tenga Contents: Read-only sobre el repo.`);
+  if (!r.ok) throw new Error(`GitHub respondió ${r.status}.`);
+  const texto = await r.text();
+  if (!texto || texto.length > MAX_BYTES) throw new Error(`${plataforma}.json: tamaño no válido.`);
+  let json;
+  try { json = JSON.parse(texto); } catch { throw new Error(`${plataforma}.json no es un JSON válido.`); }
+  return { json, sha: createHash("sha256").update(texto).digest("hex"), mtime: new Date() };
+}
+
+async function sincronizarGithub(importarDespues) {
+  const importadas = [];
+  for (const p of PLATAFORMAS) {
+    try {
+      const a = await bajarDeGithub(p);
+      importadas.push(a ? (importarDespues ? await importar(p, { archivo: a }) : { plataforma: p, estado: "descargada" }) : { plataforma: p, estado: "sin_archivo" });
+    } catch (e) { importadas.push({ plataforma: p, estado: "error", errores: [limpiarMsg(e.message)] }); }
+  }
+  return { origen: "github", rama: process.env.COOKIES_GITHUB_RAMA || "main", importadas };
+}
+
 const limpiarMsg = s => String(s).replace(/(https?:\/\/)[^@\s/]+@/g, "$1***@").split("\n")[0].slice(0, 200);   // sin tokens incrustados en la URL
 let enCurso = false;
 
-// Trae de origin SOLO la carpeta cookies/ (fetch + restore de esa ruta): el código desplegado no se toca.
+// Con COOKIES_GITHUB_TOKEN usa la API de GitHub; sin él, git local. Trae de origin SOLO la carpeta cookies/ (fetch + restore de esa ruta): el código desplegado no se toca.
 // Requiere que la carpeta esté dentro de un clon git con el remoto ya autenticado (SSH o token). Se niega a
 // pisar cambios locales sin subir.
 export async function sincronizar({ importarDespues = true } = {}) {
   if (enCurso) throw new ErrorHttp(409, "Ya hay una sincronización en curso.");
   enCurso = true;
   try {
+    if (process.env.COOKIES_GITHUB_TOKEN) return await sincronizarGithub(importarDespues);   // modo Railway: API de GitHub
     const dir = dirCookies();
     let top, rama, rel;
     try {
