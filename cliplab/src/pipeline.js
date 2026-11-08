@@ -74,7 +74,10 @@ export async function hCortar(job) {
   await q("UPDATE clips SET estado='cortando', error=NULL WHERE id=$1 AND estado <> 'publicado'", [c.id]);
   try {
     await procesarClip(c);
-    if (c.auto_plataformas?.length) await encolar("publicar", c.id, { plataformas: c.auto_plataformas }, 0, 1);
+    if (c.auto_plataformas?.length) {
+      await encolar("publicar", c.id, { plataformas: c.auto_plataformas }, 0, 1);
+      await encolar("auto_variantes", c.id, {}, 0, 2);   // las variantes se arman solas (auto-variantes.js)
+    }
   } catch (e) {
     if (ultimo(job)) await q("UPDATE clips SET estado='error', error=$2 WHERE id=$1 AND estado <> 'publicado'", [c.id, e.message.slice(0, 400)]);
     throw e;

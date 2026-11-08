@@ -3,7 +3,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cfg } from "./config.js";
 
 const COOKIE = "cl_session";
-const SESION_SEG = 12 * 3600;
+const SESION_SEG = Math.max(1, Number(process.env.SESION_HORAS) || 12) * 3600;   // SESION_HORAS; se renueva sola mientras se use
 const MAX_FALLOS = 10;
 const VENTANA_MS = 15 * 60e3;
 let SKEY = null;
@@ -88,7 +88,7 @@ export function isAuthed(req) {
 // Middleware de raíz: todo lo que no sea público pasa por aquí.
 export function requireAuth(req, res, next) {
   if (bloqueado(req.ip)) return res.status(429).json({ error: "Demasiados intentos fallidos. Espera 15 minutos." });
-  if (isAuthed(req)) return next();
+  if (isAuthed(req)) { renovarSesion(req, res); return next(); }
   if (req.get("x-api-key")) falla(req.ip);
   res.status(401).json({ error: "Acceso denegado." });
 }
@@ -115,14 +115,27 @@ p{margin:0;color:#f27c6b;min-height:1.2em;font-size:.9rem}
 </form></body></html>`);
 }
 
-export function login(req, res) {
-  if (bloqueado(req.ip)) return loginPage(res, "Demasiados intentos. Espera 15 minutos.", 429);
-  const clave = typeof req.body?.key === "string" ? req.body.key : "";
-  if (!clave || !same(clave, cfg.masterKey)) { falla(req.ip); return res.redirect(303, "/?e=1"); }
+function emitirCookie(req, res) {
   const exp = Math.floor(Date.now() / 1000) + SESION_SEG;
   res.cookie(COOKIE, `${exp}.${sign("s:" + exp)}`, {
     httpOnly: true, sameSite: "strict", secure: req.secure, maxAge: SESION_SEG * 1000, path: "/"
   });
+}
+
+// Renovación deslizante: si a la cookie le queda menos de la mitad de vida, se reemite. Quien usa el panel nunca ve el login expirar.
+export function renovarSesion(req, res) {
+  if (req.get("x-api-key")) return;
+  const c = leerCookie(req, COOKIE);
+  if (!c || !sesionValida(c)) return;
+  if (Number(c.split(".")[0]) - Date.now() / 1000 > SESION_SEG / 2) return;
+  emitirCookie(req, res);
+}
+
+export function login(req, res) {
+  if (bloqueado(req.ip)) return loginPage(res, "Demasiados intentos. Espera 15 minutos.", 429);
+  const clave = typeof req.body?.key === "string" ? req.body.key : "";
+  if (!clave || !same(clave, cfg.masterKey)) { falla(req.ip); return res.redirect(303, "/?e=1"); }
+  emitirCookie(req, res);
   res.redirect(303, "/");
 }
 

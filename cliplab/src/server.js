@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { cfg } from "./config.js";
 import { q, db, iniciarDb } from "./db.js";
-import { assertConfig, securityHeaders, rateLimit, isAuthed, requireAuth, login, logout, loginPage, CSP_PANEL } from "./security.js";
+import { assertConfig, securityHeaders, rateLimit, isAuthed, requireAuth, login, logout, loginPage, renovarSesion, CSP_PANEL } from "./security.js";
 import { PLATAFORMAS, listarSesiones, guardarSesion, borrarSesion, tieneSesion, marcarTest, normalizarSesion, validarSesion } from "./sesiones.js";
 import { encolar, iniciarWorker, recuperarJobs } from "./queue.js";
 import { hAnalizar, hCortar, hPublicar, ytUrl } from "./pipeline.js";
@@ -14,6 +14,9 @@ import { hLoteItem, iniciarDespachador } from "./lotes.js";
 import { rutasLotes } from "./rutas-lotes.js";
 import { hVivoSegmento, prepararVivo, detenerCapturas } from "./vivo.js";
 import { rutasVivo } from "./rutas-vivo.js";
+import { rutasCookies } from "./rutas-cookies.js";
+import { prepararCookies } from "./cookies-repo.js";
+import { hAutoVariantes } from "./auto-variantes.js";
 
 assertConfig();   // sin MASTER_KEY no arranca
 process.on("unhandledRejection", e => console.error("unhandledRejection:", e));
@@ -39,6 +42,7 @@ app.post("/auth/login", express.urlencoded({ extended: false, limit: "2kb" }), l
 app.post("/auth/logout", logout);
 app.get("/", (req, res) => {
   if (!isAuthed(req)) return loginPage(res, req.query.e ? "Llave incorrecta." : "");
+  renovarSesion(req, res);
   res.set("Content-Security-Policy", CSP_PANEL);
   res.sendFile(PUB + "index.html");
 });
@@ -165,6 +169,7 @@ api.delete("/sesiones/:p", h(async (req, res) => {
 
 api.use(rutasLotes);   // Fase 4: lotes, ciclos, reciclaje y variantes
 api.use(rutasVivo);    // Fase 6: transmisiones en vivo
+api.use(rutasCookies); // cookies de redes sociales (importación y sincronización)
 app.use("/api", api);
 app.use((req, res) => res.status(404).json({ error: "No encontrado." }));
 app.use((e, req, res, next) => {
@@ -177,13 +182,14 @@ app.use((e, req, res, next) => {
 await iniciarDb();
 await recuperarJobs();
 await prepararVivo();   // tablas de vivo + reanuda capturas que seguían en curso
+await prepararCookies().catch(e => console.error("cookies:", e.message));   // importa cookies/*.json si cambiaron
 await limpiar().catch(console.error);
 setInterval(() => limpiar().catch(console.error), 600e3).unref();   // cada 10 min
 spawn("yt-dlp", ["-U"], { stdio: "ignore" }).on("error", () => {});   // YouTube cambia seguido: se actualiza al arrancar
 
 // Los elementos de lote comparten worker con su equivalente (medios / agente): FFmpeg y el navegador nunca corren dos tareas a la vez.
-const despachar = job => ({ analizar: hAnalizar, cortar: hCortar, lote_medios: hLoteItem, vivo_segmento: hVivoSegmento }[job.tipo])(job);
-iniciarWorker("medios", ["analizar", "cortar", "lote_medios", "vivo_segmento"], despachar);
+const despachar = job => ({ analizar: hAnalizar, cortar: hCortar, lote_medios: hLoteItem, vivo_segmento: hVivoSegmento, auto_variantes: hAutoVariantes }[job.tipo])(job);
+iniciarWorker("medios", ["analizar", "cortar", "lote_medios", "vivo_segmento", "auto_variantes"], despachar);
 iniciarWorker("agente", ["publicar", "lote_agente"], job => (job.tipo === "publicar" ? hPublicar : hLoteItem)(job), 4000);
 const detenerLotes = iniciarDespachador();   // ciclos de 10-20 elementos
 
