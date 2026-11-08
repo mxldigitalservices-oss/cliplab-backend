@@ -1,43 +1,38 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex,noarchive,nosnippet">
-<title>ClipLab</title>
-<link rel="stylesheet" href="/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ClipLab · Panel</title>
+  <link rel="stylesheet" href="/css/panel.css">
 </head>
 <body>
-<header>
-  <b>ClipLab</b><span id="modo" class="tag"></span><span id="info" class="muted"></span>
-  <form method="post" action="/auth/logout"><button class="ghost">Salir</button></form>
-</header>
-<main>
-  <section class="card">
-    <h2>Nuevo video</h2>
-    <form id="f">
-      <input id="url" type="url" inputmode="url" placeholder="Enlace de YouTube" autocomplete="off" required>
-      <div class="plats" id="auto"></div>
-      <small class="muted">Marca plataformas para publicar solo el mejor clip de forma automática. Sin marcar, tú eliges por clip.</small>
-      <button class="run" id="go" type="submit">Analizar y cortar</button>
-    </form>
-    <p id="msg"></p>
-    <div id="fuentes" class="muted"></div>
-  </section>
-  <section class="card">
-    <h2>Sesiones</h2>
-    <p class="muted">Genera el archivo en tu equipo con <code>npm run login -- tiktok</code> y súbelo aquí. Se guarda cifrado.</p>
-    <div id="ses"></div>
-  </section>
-  <section>
-    <h2>Clips</h2>
-    <div id="clips" class="grid"></div>
-  </section>
-  <section class="card">
-    <h2>Capturas de evidencia</h2>
-    <div id="evid" class="muted"></div>
-  </section>
-</main>
-<script src="/app.js" defer></script>
+  <div class="app">
+    <aside class="lateral">
+      <div class="marca"><span class="logo" aria-hidden="true">▶</span><span>ClipLab</span><small>Fase 5</small></div>
+      <nav id="nav" aria-label="Secciones"></nav>
+      <div class="lateral-pie">
+        <div id="conexion" class="conexion" role="status"><span class="punto"></span><span class="txt">Conectando…</span></div>
+        <button id="btn-salir" class="btn ghost sm" type="button">Salir</button>
+      </div>
+    </aside>
+
+    <main class="principal">
+      <header class="barra">
+        <h1 id="titulo-vista">ClipLab</h1>
+        <div class="barra-der">
+          <span id="chip-modo" class="chip">…</span>
+          <span id="chip-agente" class="chip">…</span>
+          <span class="chip regla" title="Regla de oro: todo clip y variante dura como máximo 60 s (ideal 30–60 s)">⏱ Máx. 60 s · ideal 30–60 s</span>
+        </div>
+      </header>
+      <section id="vista" tabindex="-1" aria-live="polite"></section>
+    </main>
+  </div>
+
+  <div id="toasts" aria-live="polite"></div>
+  <noscript><p style="padding:1rem">Este panel necesita JavaScript.</p></noscript>
+  <script type="module" src="/js/main.js"></script>
 </body>
 </html>
