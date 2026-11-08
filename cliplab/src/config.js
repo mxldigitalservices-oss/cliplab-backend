@@ -4,15 +4,22 @@ const num = (k, d) => {
   const v = Number(raw);
   return Number.isFinite(v) ? v : d;
 };
-const lista = s => String(s || "").split(",").map(x => x.trim()).filter(Boolean);
+const llave = k => String(process.env[k] || "").trim();
 
 export const cfg = {
   port: num("PORT", 3000),
   dbUrl: process.env.DATABASE_URL,
+  dbSsl: process.env.PGSSL === "1",
   masterKey: process.env.MASTER_KEY || process.env.API_KEY || "",
   sessionKey: process.env.SESSION_KEY || "",
-  geminiKeys: lista(process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY),
-  geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+  // Cada rol tiene su propia llave y su propio enfriamiento (ver gemini.js).
+  geminiKeys: {
+    copy: llave("GEMINI_API_KEY_1"),       // Copywriting y títulos de alto impacto
+    auditoria: llave("GEMINI_API_KEY_2"),  // Auditoría y validación ortográfica
+    analisis: llave("GEMINI_API_KEY_3"),   // Análisis de transcripciones y extracción de fragmentos
+    respaldo: llave("GEMINI_API_KEY_4")    // Respaldo y verificación cruzada
+  },
+  geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash",
   clipsDir: process.env.CLIPS_DIR || "/tmp/clips",
   dataDir: process.env.DATA_DIR || "/tmp/cliplab-data",
   ttlHoras: num("TTL_HORAS", 48),

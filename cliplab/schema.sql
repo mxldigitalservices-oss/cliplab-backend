@@ -70,3 +70,15 @@ CREATE TABLE IF NOT EXISTS jobs (
   creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS jobs_cola_idx ON jobs (estado, ejecutar_en);
+
+-- Registro de uso de Gemini por rol (nunca se guarda la llave, solo el rol).
+CREATE TABLE IF NOT EXISTS gemini_uso (
+  id BIGSERIAL PRIMARY KEY,
+  rol TEXT NOT NULL,
+  modelo TEXT NOT NULL,
+  http INT,
+  ms INT,
+  error TEXT,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS gemini_uso_idx ON gemini_uso (rol, creado_en DESC);

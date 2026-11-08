@@ -1,42 +1,99 @@
-// Director de contenido: Gemini con rotación de llaves y enfriamiento ante 429.
+// Gestor multillave de Gemini: cada rol usa su propia llave, con enfriamiento independiente
+// y relevo automático hacia la llave de respaldo (GEMINI_API_KEY_4).
 import { cfg } from "./config.js";
+import { q } from "./db.js";
 
-const frio = new Map();
-let giro = 0;
+export const ROL = Object.freeze({
+  COPY: "copy",            // GEMINI_API_KEY_1
+  AUDITORIA: "auditoria",  // GEMINI_API_KEY_2
+  ANALISIS: "analisis",    // GEMINI_API_KEY_3
+  RESPALDO: "respaldo"     // GEMINI_API_KEY_4
+});
+const VARIABLE = { copy: "GEMINI_API_KEY_1", auditoria: "GEMINI_API_KEY_2", analisis: "GEMINI_API_KEY_3", respaldo: "GEMINI_API_KEY_4" };
+
 const dormir = ms => new Promise(r => setTimeout(r, ms));
+const estado = Object.fromEntries(Object.values(ROL).map(r => [r, { frioHasta: 0, usos: 0, fallos: 0 }]));
+const llaveDe = rol => cfg.geminiKeys[rol] || "";
 
-function elegir() {
-  const ahora = Date.now(), n = cfg.geminiKeys.length;
-  for (let i = 0; i < n; i++) {
-    const k = cfg.geminiKeys[(giro + i) % n];
-    if ((frio.get(k) || 0) <= ahora) { giro = (giro + i + 1) % n; return k; }
-  }
-  return null;
-}
+// Orden de intento: la llave propia del rol y, si falla o está en enfriamiento, la de respaldo.
+export const cadena = rol => {
+  if (!estado[rol]) throw new Error(`Rol Gemini desconocido: ${rol}`);
+  return [...new Set([rol, ROL.RESPALDO])].filter(r => llaveDe(r));
+};
 
-async function llamar(cuerpo) {
-  if (!cfg.geminiKeys.length) throw new Error("Faltan GEMINI_API_KEYS (o GEMINI_API_KEY).");
+// Diagnóstico seguro: nunca expone el valor de las llaves.
+export const estadoLlaves = () => Object.values(ROL).map(rol => ({
+  rol, variable: VARIABLE[rol], configurada: !!llaveDe(rol), modelo: cfg.geminiModel,
+  enfriamientoSeg: Math.max(0, Math.ceil((estado[rol].frioHasta - Date.now()) / 1000)),
+  usos: estado[rol].usos, fallos: estado[rol].fallos
+}));
+
+// Registro de uso en PostgreSQL (mejor esfuerzo: si la base falla, no se interrumpe la IA).
+let registrar = (rol, http, ms, error) =>
+  q("INSERT INTO gemini_uso(rol, modelo, http, ms, error) VALUES($1,$2,$3,$4,$5)", [rol, cfg.geminiModel, http, ms, error ? String(error).slice(0, 300) : null])
+    .catch(e => console.error("gemini_uso:", e.message));
+export const _test = { fijarRegistro: fn => { registrar = fn; }, reiniciar: () => { for (const e of Object.values(estado)) Object.assign(e, { frioHasta: 0, usos: 0, fallos: 0 }); } };
+
+const enfriar = (rol, ms) => { estado[rol].frioHasta = Date.now() + ms; estado[rol].fallos++; };
+const retryAfterMs = (r, porDefecto) => {
+  const v = Number(r.headers?.get?.("retry-after"));
+  return Number.isFinite(v) && v > 0 ? Math.min(v * 1000, 600000) : porDefecto;
+};
+
+// Llama a Gemini con la llave del rol. Devuelve { data, rol } (rol = llave que respondió).
+export async function generar(rol, cuerpo, { timeoutMs = 300000 } = {}) {
+  const orden = cadena(rol);
+  if (!orden.length) throw new Error(`Falta ${VARIABLE[rol]} (y GEMINI_API_KEY_4 de respaldo) en las variables del servidor.`);
   let ultimo = "";
-  for (let intento = 0; intento < cfg.geminiKeys.length * 2 + 2; intento++) {
-    const k = elegir();
-    if (!k) {
-      const libre = Math.min(...cfg.geminiKeys.map(x => frio.get(x) || 0)) - Date.now();
+  for (let intento = 0; intento < orden.length * 3 + 2; intento++) {
+    const ahora = Date.now();
+    const usable = orden.find(r => estado[r].frioHasta <= ahora);
+    if (!usable) {
+      const libre = Math.min(...orden.map(r => estado[r].frioHasta)) - ahora;
       await dormir(Math.min(20000, Math.max(1000, libre)));
       continue;
     }
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": k },
-      body: JSON.stringify(cuerpo),
-      signal: AbortSignal.timeout(300000)
-    });
-    if (r.ok) return r.json();
-    ultimo = `Gemini ${r.status}: ${(await r.text()).slice(0, 200)}`;
-    if (r.status === 429 || r.status >= 500) { frio.set(k, Date.now() + (r.status === 429 ? 60000 : 15000)); continue; }
-    if (r.status === 401 || r.status === 403) { frio.set(k, Date.now() + 3600000); continue; }
-    throw new Error(ultimo);
+    const t0 = Date.now();
+    let r;
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.geminiModel}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": llaveDe(usable) },
+        body: JSON.stringify(cuerpo),
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+    } catch (e) {   // red caída o tiempo agotado: se enfría esa llave un momento y se relevan
+      ultimo = `Gemini sin respuesta (${e.name}): ${e.message}`;
+      enfriar(usable, 10000);
+      registrar(usable, null, Date.now() - t0, ultimo);
+      continue;
+    }
+    const ms = Date.now() - t0;
+    if (r.ok) {
+      estado[usable].usos++;
+      registrar(usable, r.status, ms, null);
+      return { data: await r.json(), rol: usable };
+    }
+    ultimo = `Gemini ${r.status} [${usable}]: ${(await r.text().catch(() => "")).slice(0, 200)}`;
+    registrar(usable, r.status, ms, ultimo);
+    if (r.status === 429) { enfriar(usable, retryAfterMs(r, 60000)); continue; }
+    if (r.status >= 500) { enfriar(usable, 15000); continue; }
+    if (r.status === 401 || r.status === 403) { enfriar(usable, 3600000); continue; }
+    if (r.status === 404) throw new Error(`Modelo "${cfg.geminiModel}" no encontrado (404). Revisa GEMINI_MODEL. ${ultimo}`);
+    throw new Error(ultimo);   // 400 y demás: error de la petición, otra llave no lo arregla
   }
   throw new Error(ultimo || "Gemini no respondió.");
+}
+
+// Atajo: texto o JSON a partir de un prompt simple (para copywriting, auditoría, etc.).
+export async function generarTexto(rol, prompt, { json = false, schema, temperature = 0.4 } = {}) {
+  const { data, rol: usado } = await generar(rol, {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature, ...(json ? { responseMimeType: "application/json", ...(schema ? { responseSchema: schema } : {}) } : {}) }
+  });
+  const texto = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("") || "";
+  if (!texto) throw new Error("Gemini no devolvió contenido.");
+  return { texto, rol: usado };
 }
 
 const prompt = () => `Eres director de contenido para formatos verticales (TikTok, Reels, Shorts).
@@ -97,7 +154,7 @@ export function validar(raw) {
 }
 
 export async function analizar(url) {
-  const j = await llamar({
+  const { data: j } = await generar(ROL.ANALISIS, {
     contents: [{ parts: [{ fileData: { fileUri: url } }, { text: prompt() }] }],
     generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0.4 }
   });
