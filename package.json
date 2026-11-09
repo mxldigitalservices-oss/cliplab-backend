@@ -1,18 +1,12 @@
 {
-  "name": "cliplab",
-  "version": "2.0.0",
+  "name": "cliplab-backend",
+  "version": "1.0.0",
   "private": true,
-  "type": "module",
-  "scripts": {
-    "start": "node src/server.js",
-    "login": "node scripts/login-local.js",
-    "test": "node --test",
-    "gemini:probar": "node scripts/probar-gemini.js"
-  },
+  "main": "src/server.js",
+  "scripts": { "start": "node src/server.js" },
+  "engines": { "node": ">=18" },
   "dependencies": {
-    "express": "4.21.2",
-    "pg": "8.13.1",
-    "playwright": "1.49.1"
-  },
-  "engines": { "node": ">=20" }
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
 }

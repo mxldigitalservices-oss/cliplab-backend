@@ -1,55 +1,166 @@
-// Cola en Postgres (FOR UPDATE SKIP LOCKED): los trabajos sobreviven a reinicios.
-import { q } from "./db.js";
+const fs = require('fs');
+const path = require('path');
+const cfg = require('./config');
+const db = require('./db');
+const ytdlp = require('./ytdlp');
+const cortes = require('./cortes');
+const investigador = require('./engine/investigador');
 
-const dormir = ms => new Promise(r => setTimeout(r, ms));
+let activos = 0;
+let detenido = false;
+let timer = null;
+let staleTimer = null;
 
-export const encolar = (tipo, refId, payload = {}, retrasoMs = 0, maxIntentos = 3) =>
-  q(
-    `INSERT INTO jobs(tipo, ref_id, payload, max_intentos, ejecutar_en)
-     VALUES($1, $2, $3, $4, now() + ($5 || ' milliseconds')::interval) RETURNING id`,
-    [tipo, refId, payload, maxIntentos, String(retrasoMs)]
+const msg = (e) => String((e && e.message) || e).slice(0, 800);
+
+async function reclamar() {
+  const { rows } = await db.query(
+    `UPDATE trabajos_cola
+        SET estado = 'procesando', intentos = intentos + 1, locked_at = now(), updated_at = now(), error = NULL
+      WHERE id = (
+        SELECT id FROM trabajos_cola
+         WHERE estado = 'pendiente'
+         ORDER BY id
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1)
+    RETURNING *`
   );
-
-// Un reinicio nunca repite una publicación a ciegas (podría duplicar el post).
-export async function recuperarJobs() {
-  await q(`UPDATE jobs SET
-      estado = CASE WHEN tipo IN ('publicar','lote_agente') THEN 'error' ELSE 'pendiente' END,
-      error = CASE WHEN tipo IN ('publicar','lote_agente') THEN 'Interrumpido por un reinicio: verifica en la plataforma antes de reintentar.' ELSE error END
-    WHERE estado = 'corriendo'`);
-  await q(`UPDATE clips SET estado = 'listo', error = 'Publicación interrumpida por un reinicio: verifica en la plataforma.' WHERE estado = 'publicando'`);
-  await q(`UPDATE clips SET estado = 'pendiente' WHERE estado = 'cortando'`);
+  return rows[0] || null;
 }
 
-async function reclamar(tipos) {
-  const { rows: [j] } = await q(
-    `UPDATE jobs SET estado = 'corriendo', intentos = intentos + 1, iniciado_en = now()
-     WHERE id = (SELECT id FROM jobs WHERE estado = 'pendiente' AND tipo = ANY($1) AND ejecutar_en <= now()
-                 ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1)
-     RETURNING *`,
-    [tipos]
+async function recuperarHuerfanos(todos = false) {
+  const { rowCount } = await db.query(
+    `UPDATE trabajos_cola
+        SET estado = 'pendiente', updated_at = now(), error = 'Reencolado tras interrupción'
+      WHERE estado = 'procesando'
+        AND ($1::boolean OR locked_at < now() - make_interval(mins => $2::int))`,
+    [todos, cfg.staleMinutos]
   );
-  return j || null;
+  if (rowCount) console.log(`[cola] ${rowCount} trabajo(s) reencolado(s)`);
 }
 
-export function iniciarWorker(nombre, tipos, manejar, cadaMs = 3000) {
-  let activo = true;
-  (async () => {
-    while (activo) {
-      let job = null;
-      try { job = await reclamar(tipos); } catch (e) { console.error(`[${nombre}] db:`, e.message); }
-      if (!job) { await dormir(cadaMs); continue; }
+async function procesar(job) {
+  let idVideo = null;
+  try {
+    // limpiar resultados previos de intentos anteriores
+    const previos = await db.query('SELECT archivo FROM vivo_clips WHERE trabajo_id = $1', [job.id]);
+    for (const r of previos.rows) {
+      if (r.archivo) { try { fs.unlinkSync(path.join(cfg.exportDir, path.basename(r.archivo))); } catch (_) {} }
+    }
+    await db.query('DELETE FROM vivo_clips WHERE trabajo_id = $1', [job.id]);
+
+    const meta = await ytdlp.metadata(job.url);
+    idVideo = meta.id;
+    await db.query(
+      'UPDATE trabajos_cola SET video_id=$2, video_titulo=$3, duracion=$4, updated_at=now() WHERE id=$1',
+      [job.id, meta.id, meta.titulo, meta.duracion]
+    );
+
+    const subs = await ytdlp.subtitulos(job.url, meta.id);
+    const analisis = investigador.analizar(
+      { ...meta, vtt: subs.texto },
+      { maxClips: cfg.clipsPorVideo, duracionClip: cfg.duracionClip }
+    );
+    if (!analisis.ganchos.length) throw new Error('El motor no encontró candidatos de corte');
+
+    await db.query(
+      'UPDATE trabajos_cola SET palabras_clave=$2::jsonb, resumen=$3, updated_at=now() WHERE id=$1',
+      [job.id, JSON.stringify(analisis.palabrasClave), analisis.resumen]
+    );
+
+    const clips = [];
+    for (const g of analisis.ganchos) {
+      const { rows } = await db.query(
+        `INSERT INTO vivo_clips (trabajo_id, titulo, estado, marca_tiempo, marca_fin, resumen)
+         VALUES ($1,$2,'pendiente',$3,$4,$5) RETURNING id`,
+        [job.id, g.titulo, g.inicio.toFixed(2), g.fin.toFixed(2), g.resumen]
+      );
+      clips.push({ id: rows[0].id, g });
+    }
+
+    const origen = await ytdlp.descargar(job.url, meta.id);
+
+    let ok = 0;
+    for (const c of clips) {
+      await db.query("UPDATE vivo_clips SET estado='procesando', updated_at=now() WHERE id=$1", [c.id]);
+      const nombre = `clip_${job.id}_${c.id}.mp4`;
       try {
-        await manejar(job);
-        await q("UPDATE jobs SET estado = 'hecho' WHERE id = $1", [job.id]);
-      } catch (e) {
-        const fin = job.intentos >= job.max_intentos;
-        console.error(`[${nombre}] job ${job.id} (${job.tipo}):`, e.message);
-        await q(
-          "UPDATE jobs SET estado = $2, error = $3, ejecutar_en = now() + interval '30 seconds' * $4::int WHERE id = $1",
-          [job.id, fin ? "error" : "pendiente", String(e.message).slice(0, 500), job.intentos]
-        ).catch(() => {});
+        await cortes.cortar({
+          entrada: origen,
+          inicio: c.g.inicio,
+          duracion: Math.max(1, c.g.fin - c.g.inicio),
+          salida: path.join(cfg.exportDir, nombre),
+        });
+        await db.query(
+          "UPDATE vivo_clips SET estado='completado', archivo=$2, error=NULL, updated_at=now() WHERE id=$1",
+          [c.id, nombre]
+        );
+        ok++;
+      } catch (err) {
+        console.error(`[cola] corte ${c.id} falló: ${msg(err)}`);
+        await db.query("UPDATE vivo_clips SET estado='error', error=$2, updated_at=now() WHERE id=$1", [c.id, msg(err)]);
       }
     }
-  })();
-  return () => { activo = false; };
+
+    if (ok === 0) throw new Error('Todos los cortes fallaron');
+    await db.query(
+      "UPDATE trabajos_cola SET estado='completado', error=$2, locked_at=NULL, updated_at=now() WHERE id=$1",
+      [job.id, ok < clips.length ? `${clips.length - ok} corte(s) fallaron` : null]
+    );
+  } catch (err) {
+    console.error(`[cola] trabajo ${job.id} falló: ${msg(err)}`);
+    const final = job.intentos >= cfg.maxIntentos;
+    try {
+      await db.query(
+        `UPDATE trabajos_cola SET estado=$2, error=$3, locked_at=NULL, updated_at=now() WHERE id=$1`,
+        [job.id, final ? 'error' : 'pendiente', msg(err)]
+      );
+      if (final) {
+        await db.query(
+          `UPDATE vivo_clips SET estado='error', error=COALESCE(error,$2), updated_at=now()
+            WHERE trabajo_id=$1 AND estado IN ('pendiente','procesando')`,
+          [job.id, msg(err)]
+        );
+      }
+    } catch (e2) {
+      console.error('[cola] no se pudo registrar el fallo:', msg(e2));
+    }
+  } finally {
+    if (idVideo) ytdlp.limpiar(idVideo);
+  }
 }
+
+async function tick() {
+  if (detenido) return;
+  try {
+    while (activos < cfg.workerConcurrency) {
+      const job = await reclamar();
+      if (!job) break;
+      activos++;
+      procesar(job)
+        .catch((e) => console.error('[cola] error no controlado:', msg(e)))
+        .finally(() => { activos--; });
+    }
+  } catch (err) {
+    console.error('[cola] error en ciclo:', msg(err));
+  }
+  if (!detenido) timer = setTimeout(tick, cfg.workerPollMs);
+}
+
+function iniciar() {
+  fs.mkdirSync(cfg.tmpDir, { recursive: true });
+  fs.mkdirSync(cfg.exportDir, { recursive: true });
+  staleTimer = setInterval(() => recuperarHuerfanos(false).catch((e) => console.error(msg(e))), 60000);
+  tick();
+  console.log(`[cola] worker iniciado (concurrencia ${cfg.workerConcurrency})`);
+}
+
+async function detener() {
+  detenido = true;
+  clearTimeout(timer);
+  clearInterval(staleTimer);
+  const t0 = Date.now();
+  while (activos > 0 && Date.now() - t0 < 15000) await new Promise((r) => setTimeout(r, 300));
+}
+
+module.exports = { iniciar, detener, recuperarHuerfanos };

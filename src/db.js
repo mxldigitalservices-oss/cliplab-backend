@@ -1,40 +1,46 @@
-import pg from "pg";
-import fs from "node:fs";
-import { cfg } from "./config.js";
+const fs = require('fs');
+const path = require('path');
+const { Pool } = require('pg');
+const cfg = require('./config');
 
-// SSL solo si PGSSL=1 (URL pública de Railway). La red interna de Railway no lo necesita.
-export const db = new pg.Pool({
-  connectionString: cfg.dbUrl,
-  max: cfg.dbPoolMax,
-  connectionTimeoutMillis: 10000,
+const pool = new Pool({
+  connectionString: cfg.databaseUrl,
+  ssl: cfg.pgSsl ? { rejectUnauthorized: false } : undefined,
+  max: cfg.pgPoolMax,
   idleTimeoutMillis: 30000,
-  ...(cfg.dbSsl ? { ssl: { rejectUnauthorized: false } } : {})
+  connectionTimeoutMillis: 10000,
 });
-db.on("error", e => console.error("pg:", e.message));
-export const q = (texto, params) => db.query(texto, params);
 
-// Transacción: BEGIN/COMMIT con ROLLBACK ante cualquier error. fn recibe el cliente (client.query).
-export async function tx(fn) {
-  const c = await db.connect();
+pool.on('error', (err) => console.error('[db] error en cliente inactivo:', err.message));
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function migrate() {
+  const sql = fs.readFileSync(path.join(__dirname, '..', 'sql', 'schema.sql'), 'utf8');
+  let client;
+  for (let i = 1; i <= 10; i++) {
+    try {
+      client = await pool.connect();
+      break;
+    } catch (err) {
+      console.error(`[db] conexión fallida (${i}/10): ${err.message}`);
+      if (i === 10) throw err;
+      await sleep(3000);
+    }
+  }
   try {
-    await c.query("BEGIN");
-    const r = await fn(c);
-    await c.query("COMMIT");
-    return r;
-  } catch (e) {
-    await c.query("ROLLBACK").catch(() => {});
-    throw e;
+    await client.query('SELECT pg_advisory_lock(727274)');
+    await client.query(sql);
+    console.log('[db] esquema verificado');
   } finally {
-    c.release();
+    try { await client.query('SELECT pg_advisory_unlock(727274)'); } catch (_) {}
+    client.release();
   }
 }
 
-export async function pingDb() {
-  await db.query("SELECT 1");
-  return true;
-}
-
-export async function iniciarDb() {
-  if (!cfg.dbUrl) throw new Error("Falta DATABASE_URL: referencia el Postgres de Railway (${{Postgres.DATABASE_URL}}).");
-  await db.query(fs.readFileSync(new URL("../schema.sql", import.meta.url), "utf8"));
-}
+module.exports = {
+  pool,
+  query: (text, params) => pool.query(text, params),
+  migrate,
+  close: () => pool.end(),
+};

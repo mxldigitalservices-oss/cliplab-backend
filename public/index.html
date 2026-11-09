@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, noarchive">
+  <title>Panel de Control</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0e1116; color: #e6e9ef; padding: 12px; }
+    h1 { font-size: 18px; margin: 4px 0 12px; }
+    h2 { font-size: 15px; margin: 18px 0 8px; color: #9aa4b2; }
+    form { display: flex; gap: 8px; }
+    input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #2a313c; background: #161b22; color: inherit; min-width: 0; }
+    button { padding: 10px 14px; border-radius: 8px; border: 0; background: #2f81f7; color: #fff; font-weight: 600; cursor: pointer; }
+    button.sec { background: #30363d; padding: 6px 10px; font-size: 12px; }
+    #banner { display: none; margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: #5a1d1d; font-size: 13px; }
+    #conteo { font-size: 13px; color: #9aa4b2; margin-top: 8px; }
+    .slot { background: #161b22; border: 1px solid #2a313c; border-radius: 10px; padding: 10px; margin-bottom: 8px; font-size: 13px; }
+    .slot .t { font-weight: 600; font-size: 14px; margin-bottom: 4px; word-break: break-word; }
+    .slot .m { color: #9aa4b2; word-break: break-word; }
+    .slot .err { color: #ff7b72; margin-top: 4px; word-break: break-word; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; margin-right: 6px; background: #30363d; }
+    .badge.procesando { background: #9e6a03; }
+    .badge.completado { background: #1a7f37; }
+    .badge.error { background: #b62324; }
+    a { color: #58a6ff; }
+  </style>
+</head>
+<body>
+  <h1>Panel de procesamiento</h1>
+  <form id="form-url">
+    <input id="url" type="url" placeholder="https://..." required>
+    <button type="submit">Encolar</button>
+  </form>
+  <div id="banner"></div>
+  <div id="conteo"></div>
+  <h2>Cola de trabajos</h2>
+  <div id="cola"></div>
+  <h2>Cortes</h2>
+  <div id="clips"></div>
+  <script src="/panel.js"></script>
+</body>
+</html>

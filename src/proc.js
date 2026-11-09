@@ -1,15 +1,42 @@
-// Ejecución de procesos externos (ffmpeg, ffprobe, yt-dlp) con timeout duro y salida acotada.
-import { spawn } from "node:child_process";
-import { cfg } from "./config.js";
+const { spawn } = require('child_process');
 
-export function correr(cmd, args, timeoutMs = cfg.ffmpegTimeoutMs) {
-  return new Promise((ok, no) => {
-    const p = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let out = "", err = "";
-    const t = setTimeout(() => { p.kill("SIGKILL"); no(new Error(`${cmd} excedió ${Math.round(timeoutMs / 1000)} s`)); }, timeoutMs);
-    p.stdout.on("data", d => { out = (out + d).slice(-20000); });
-    p.stderr.on("data", d => { err = (err + d).slice(-1200); });
-    p.on("error", e => { clearTimeout(t); no(e); });
-    p.on("close", c => { clearTimeout(t); c === 0 ? ok(out) : no(new Error(`${cmd} terminó con código ${c}: ${err.slice(-500)}`)); });
+function run(cmd, args, { timeoutMs = 10 * 60 * 1000, maxBytes = 32 * 1024 * 1024 } = {}) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = [];
+    let outSize = 0;
+    let err = '';
+    let finished = false;
+
+    const timer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      p.kill('SIGKILL');
+      reject(new Error(`Tiempo agotado ejecutando ${cmd}`));
+    }, timeoutMs);
+
+    p.stdout.on('data', (d) => {
+      outSize += d.length;
+      if (outSize <= maxBytes) out.push(d);
+    });
+    p.stderr.on('data', (d) => {
+      err += d.toString();
+      if (err.length > 8000) err = err.slice(-8000);
+    });
+    p.on('error', (e) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      reject(e);
+    });
+    p.on('close', (code) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      if (code === 0) return resolve({ stdout: Buffer.concat(out).toString('utf8'), stderr: err });
+      reject(new Error(`${cmd} terminó con código ${code}: ${err.trim().slice(-600)}`));
+    });
   });
 }
+
+module.exports = { run };
