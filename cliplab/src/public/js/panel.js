@@ -258,3 +258,14 @@ export function crearCentro({ construir, cadaMs = 4000, latidoMs = 10000, max = 
     }
   };
 }
+
+// --- [CLAUDET PATCH] Auto-refresco dinámico en vivo para evitar datos frisados ---
+if (typeof window !== 'undefined') {
+    setInterval(() => {
+        if (typeof window.cargarDatosPanel === 'function') {
+            window.cargarDatosPanel();
+        } else if (typeof window.actualizarResumen === 'function') {
+            window.actualizarResumen();
+        }
+    }, 15000); // Refresco automático cada 15 segundos sin recargar la página entera
+}
