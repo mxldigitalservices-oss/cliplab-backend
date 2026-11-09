@@ -7,3 +7,4 @@ data/
 *.mp4
 cookies.txt
 sesion-*.json
+cookies/

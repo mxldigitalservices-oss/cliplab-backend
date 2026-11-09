@@ -1,38 +1,130 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>ClipLab · Panel</title>
-  <link rel="stylesheet" href="/css/panel.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,noarchive,nosnippet">
+<title>ClipLab</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/panel.css">
 </head>
 <body>
-  <div class="app">
-    <aside class="lateral">
-      <div class="marca"><span class="logo" aria-hidden="true">▶</span><span>ClipLab</span><small>Fase 5</small></div>
-      <nav id="nav" aria-label="Secciones"></nav>
-      <div class="lateral-pie">
-        <div id="conexion" class="conexion" role="status"><span class="punto"></span><span class="txt">Conectando…</span></div>
-        <button id="btn-salir" class="btn ghost sm" type="button">Salir</button>
+<header>
+  <b>ClipLab</b><span id="modo" class="tag"></span>
+  <span id="vivo" class="vivo" data-estado="conectando" role="status" aria-live="polite"><i></i><span id="vivo-txt">conectando…</span></span>
+  <span id="conex" class="conex" role="group" aria-label="Estado de las conexiones"></span>
+  <span id="info" class="muted"></span>
+  <form method="post" action="/auth/logout"><button class="ghost">Salir</button></form>
+  <nav class="tabs" role="tablist" aria-label="Secciones del panel">
+    <button type="button" class="tab-btn" role="tab" id="tb-resumen" data-tab="resumen" aria-controls="t-resumen" aria-selected="true">Resumen</button>
+    <button type="button" class="tab-btn" role="tab" id="tb-conexiones" data-tab="conexiones" aria-controls="t-conexiones" aria-selected="false" tabindex="-1">Conexiones</button>
+    <button type="button" class="tab-btn" role="tab" id="tb-lotes" data-tab="lotes" aria-controls="t-lotes" aria-selected="false" tabindex="-1">Lotes y variantes</button>
+    <button type="button" class="tab-btn" role="tab" id="tb-incidencias" data-tab="incidencias" aria-controls="t-incidencias" aria-selected="false" tabindex="-1">Incidencias<span id="bd-incidencias" class="badge" hidden>0</span></button>
+    <button type="button" class="tab-btn" role="tab" id="tb-clips" data-tab="clips" aria-controls="t-clips" aria-selected="false" tabindex="-1">Clips</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ===== Resumen ===== -->
+  <section id="t-resumen" class="panel-tab" role="tabpanel" aria-labelledby="tb-resumen">
+    <div id="rs-listo"><div class="card muted">Cargando estado del sistema…</div></div>
+    <div id="rs-tarjetas" class="stats"></div>
+    <div class="dos-col">
+      <div class="card"><h2>Próximas variantes</h2><div id="rs-proximas" class="muted">—</div></div>
+      <div class="card"><h2>Actividad reciente</h2><div id="rs-actividad" class="muted">—</div></div>
+    </div>
+  </section>
+
+  <!-- ===== Conexiones ===== -->
+  <section id="t-conexiones" class="panel-tab" role="tabpanel" aria-labelledby="tb-conexiones" hidden>
+    <div id="cx-listo"><div class="card muted">Cargando…</div></div>
+    <div class="cabecera">
+      <h2>Sesiones de plataformas</h2>
+      <button type="button" class="ghost" id="cx-verificar">Verificar conexiones</button>
+      <button type="button" class="run chico" id="cx-activar-todas">Activar todas</button>
+    </div>
+    <div id="cx-redes" class="redes"></div>
+    <p class="muted">Las sesiones se leen de variables Base64 en Railway (por ejemplo <code>SESION_TIKTOK_B64</code>). Pulsa <b>Activar sesión</b> para validarlas y dejarlas listas; no hace falta subir archivos.</p>
+    <div class="card"><h2>Verificación del asistente</h2><div id="cx-checks" class="muted">—</div></div>
+  </section>
+
+  <!-- ===== Lotes y variantes ===== -->
+  <section id="t-lotes" class="panel-tab" role="tabpanel" aria-labelledby="tb-lotes" hidden>
+    <div class="card">
+      <div class="cabecera">
+        <h2>Monitor del sistema</h2>
+        <span id="lt-hora" class="muted"></span>
+        <button type="button" class="ghost" id="lt-consultar">Consultar monitor</button>
       </div>
-    </aside>
+      <div id="lt-monitor" class="muted">—</div>
+    </div>
+    <div>
+      <h2>Lotes</h2>
+      <div id="lt-lotes" class="lista-lotes"></div>
+    </div>
+    <div class="card">
+      <div class="cabecera">
+        <h2>Variantes del reciclaje multi-ángulo</h2>
+        <label class="muted">Mostrar
+          <select id="lt-filtro">
+            <option value="activas">Activas y con problemas</option>
+            <option value="programada">Programadas</option>
+            <option value="en_cola">En cola</option>
+            <option value="publicando">Publicando</option>
+            <option value="incierta">Inciertas</option>
+            <option value="parcial">Parciales</option>
+            <option value="error">Con error</option>
+            <option value="historial">Historial (publicadas, simuladas, canceladas)</option>
+            <option value="todas">Todas</option>
+          </select>
+        </label>
+      </div>
+      <div id="lt-vars" class="muted">—</div>
+    </div>
+  </section>
 
-    <main class="principal">
-      <header class="barra">
-        <h1 id="titulo-vista">ClipLab</h1>
-        <div class="barra-der">
-          <span id="chip-modo" class="chip">…</span>
-          <span id="chip-agente" class="chip">…</span>
-          <span class="chip regla" title="Regla de oro: todo clip y variante dura como máximo 60 s (ideal 30–60 s)">⏱ Máx. 60 s · ideal 30–60 s</span>
-        </div>
-      </header>
-      <section id="vista" tabindex="-1" aria-live="polite"></section>
-    </main>
-  </div>
+  <!-- ===== Incidencias ===== -->
+  <section id="t-incidencias" class="panel-tab" role="tabpanel" aria-labelledby="tb-incidencias" hidden>
+    <div id="in-resumen"></div>
+    <div class="card"><h2>Publicaciones inciertas <span id="in-n-inciertas" class="muted"></span></h2>
+      <p class="muted">Se pulsó Publicar pero la plataforma no confirmó. Revisa la cuenta antes de decidir para no duplicar el video.</p>
+      <div id="in-inciertas"></div></div>
+    <div class="card"><h2>Variantes con problemas <span id="in-n-variantes" class="muted"></span></h2><div id="in-variantes"></div></div>
+    <div class="card"><h2>Clips con error <span id="in-n-clips" class="muted"></span></h2><div id="in-clips"></div></div>
+    <div class="card"><h2>Elementos de lote con error (7 días) <span id="in-n-items" class="muted"></span></h2><div id="in-items"></div></div>
+  </section>
 
-  <div id="toasts" aria-live="polite"></div>
-  <noscript><p style="padding:1rem">Este panel necesita JavaScript.</p></noscript>
-  <script type="module" src="/js/main.js"></script>
+  <!-- ===== Clips ===== -->
+  <section id="t-clips" class="panel-tab" role="tabpanel" aria-labelledby="tb-clips" hidden>
+    <div class="card">
+      <h2>Nuevo video</h2>
+      <form id="f">
+        <input id="url" type="url" inputmode="url" placeholder="Enlace de YouTube" autocomplete="off" required>
+        <div class="plats" id="auto"></div>
+        <small class="muted">Marca plataformas para publicar solo el mejor clip de forma automática. Sin marcar, tú eliges por clip.</small>
+        <button class="run" id="go" type="submit">Analizar y cortar</button>
+      </form>
+      <div id="fuentes" class="muted"></div>
+    </div>
+    <div>
+      <h2>Inventario de clips</h2>
+      <div id="clips" class="grid"></div>
+    </div>
+    <div class="card">
+      <h2>Capturas de evidencia</h2>
+      <div id="evid" class="muted"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/app.js" defer></script>
+<script src="/acciones.js" defer></script>
+<script src="/vista-resumen.js" defer></script>
+<script src="/vista-conexiones.js" defer></script>
+<script src="/vista-lotes.js" defer></script>
+<script src="/vista-incidencias.js" defer></script>
+<script src="/vista-clips.js" defer></script>
 </body>
 </html>
