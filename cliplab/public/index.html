@@ -4,94 +4,134 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, noarchive">
-  <title>ClipLab Pro — Panel de Control y Marketing</title>
+  <title>ClipLab Pro</title>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, sans-serif; background: #0e1116; color: #e6e9ef; padding: 16px; }
-    h1 { font-size: 20px; margin: 0 0 16px; display: flex; align-items: center; justify-content: space-between; }
-    .nav-tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid #2a313c; padding-bottom: 8px; flex-wrap: wrap; }
-    .tab-btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 500; }
-    .tab-btn.active { background: #238636; border-color: #2ea043; color: #fff; }
+    .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .logo-area { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; color: #fff; }
+    .logo-icon { background: #2f81f7; width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .btn-key { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+    .btn-key:hover { background: #30363d; }
+    
+    form { display: flex; gap: 8px; margin-bottom: 20px; }
+    input { flex: 1; padding: 12px 14px; border-radius: 8px; border: 1px solid #30363d; background: #161b22; color: #e6e9ef; font-size: 14px; min-width: 0; }
+    input:focus { outline: none; border-color: #2f81f7; }
+    button.primary { padding: 10px 20px; border-radius: 8px; border: 0; background: #2f81f7; color: #fff; font-weight: 600; cursor: pointer; font-size: 14px; }
+    button.primary:hover { background: #388bfd; }
+
+    .nav-tabs { display: flex; gap: 6px; margin-bottom: 20px; border-bottom: 1px solid #21262d; padding-bottom: 8px; align-items: center; }
+    .tab-btn { background: #161b22; border: 1px solid #30363d; color: #8b949e; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+    .tab-btn.active { background: #21262d; border-color: #484f58; color: #fff; }
+    .tab-badge { background: #30363d; padding: 1px 6px; border-radius: 999px; font-size: 11px; margin-left: 4px; color: #c9d1d9; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
-    form { display: flex; gap: 8px; margin-bottom: 16px; }
-    input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #2a313c; background: #161b22; color: inherit; min-width: 0; }
-    button.primary { padding: 10px 18px; border-radius: 8px; border: 0; background: #238636; color: #fff; font-weight: 600; cursor: pointer; }
-    button.sec { background: #30363d; padding: 6px 10px; border-radius: 6px; font-size: 12px; color: #c9d1d9; border: 1px solid #484f58; cursor: pointer; }
-    #banner { display: none; margin-bottom: 12px; padding: 10px; border-radius: 8px; background: #5a1d1d; font-size: 13px; border: 1px solid #822727; }
-    #conteo { font-size: 13px; color: #8b949e; margin-bottom: 16px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
-    .card h2 { font-size: 15px; margin: 0 0 12px; color: #c9d1d9; border-bottom: 1px solid #21262d; padding-bottom: 6px; }
-    .slot { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 13px; }
-    .slot .t { font-weight: 600; font-size: 14px; margin-bottom: 6px; word-break: break-word; display: flex; align-items: center; gap: 8px; }
-    .slot .m { color: #8b949e; word-break: break-word; margin-top: 4px; }
-    .slot .err { color: #ff7b72; margin-top: 6px; word-break: break-word; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+    @media (max-width: 1000px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
+    .stat-card.c-pend { border-left: 4px solid #8b949e; }
+    .stat-card.c-proc { border-left: 4px solid #bb8009; }
+    .stat-card.c-comp { border-left: 4px solid #238636; }
+    .stat-card.c-err  { border-left: 4px solid #da3633; }
+    .stat-card.c-list { border-left: 4px solid #2f81f7; }
+    .stat-num { font-size: 24px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .stat-label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    h2 { font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 12px; }
+    .section-title { font-size: 16px; font-weight: 600; color: #e6e9ef; margin: 24px 0 12px; }
+    
+    .card-slot { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    .card-slot .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .badge.completado { background: #238636; color: #fff; }
     .badge.pendiente { background: #6e7681; color: #fff; }
     .badge.procesando { background: #bb8009; color: #fff; }
-    .badge.completado { background: #238636; color: #fff; }
     .badge.error { background: #da3633; color: #fff; }
-    a { color: #58a6ff; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .player-container { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; margin-top: 8px; aspect-ratio: 9/16; max-height: 380px; display: flex; align-items: center; justify-content: center; }
-    .player-container video { width: 100%; height: 100%; object-fit: contain; }
-    .play-overlay { position: absolute; background: rgba(0,0,0,0.6); border: 2px solid #fff; border-radius: 50%; width: 60px; height: 50px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s; }
-    .play-overlay:hover { transform: scale(1.1); background: rgba(35,134,54,0.8); border-color: #2ea043; }
-    .play-icon { width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent; border-left: 20px solid #fff; margin-left: 4px; }
-    .marketing-box { background: #161b22; border: 1px dashed #30363d; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 12px; color: #8b949e; }
+    
+    .clip-title { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 6px; word-break: break-word; }
+    .clip-meta { font-size: 12px; color: #8b949e; margin-bottom: 12px; }
+    
+    .btn-download { display: inline-flex; align-items: center; gap: 6px; background: #2f81f7; color: #fff; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none; border: 0; cursor: pointer; }
+    .btn-download:hover { background: #388bfd; }
+    
+    #banner { display: none; margin-bottom: 16px; padding: 12px; border-radius: 8px; background: #5a1d1d; border: 1px solid #822727; font-size: 13px; }
   </style>
 </head>
 <body>
-  <h1>
-    <span>ClipLab Pro — Automatización y Marketing</span>
-    <button class="sec" onclick="localStorage.clear(); location.reload();">Reiniciar Sesión</button>
-  </h1>
-
-  <div class="nav-tabs">
-    <button class="tab-btn active" onclick="switchTab('resumen')">Resumen y Cola</button>
-    <button class="tab-btn" onclick="switchTab('cortes')">Inventario de Clips & Play</button>
-    <button class="tab-btn" onclick="switchTab('marketing')">Módulo de Marketing & Copys</button>
+  <div class="header-top">
+    <div class="logo-area">
+      <div class="logo-icon">▶</div>
+      <span>ClipLab Pro</span>
+    </div>
+    <button class="btn-key" onclick="pedirLlave()">🔑 Llave</button>
   </div>
 
   <form id="form-url">
-    <input id="url" type="url" placeholder="Pega el enlace de YouTube o video fuente aquí..." required>
-    <button type="submit" class="primary">Procesar y Encolar</button>
+    <input id="url" type="url" placeholder="Pega el enlace del video (https://...)" required>
+    <button type="submit" class="primary">Encolar</button>
   </form>
 
   <div id="banner"></div>
-  <div id="conteo"></div>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('resumen', event)">Resumen</button>
+    <button class="tab-btn" onclick="switchTab('clips', event)">Clips <span id="badge-clips" class="tab-badge">0</span></button>
+    <button class="tab-btn" onclick="switchTab('lotes', event)">Lotes / Variantes <span id="badge-lotes" class="tab-badge">1</span></button>
+    <button class="tab-btn" onclick="switchTab('incidencias', event)">Incidencias <span id="badge-err" class="tab-badge">0</span></button>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card c-pend">
+      <div id="stat-pend" class="stat-num">0</div>
+      <div class="stat-label">Pendientes</div>
+    </div>
+    <div class="stat-card c-proc">
+      <div id="stat-proc" class="stat-num">0</div>
+      <div class="stat-label">Procesando</div>
+    </div>
+    <div class="stat-card c-comp">
+      <div id="stat-comp" class="stat-num">1</div>
+      <div class="stat-label">Completados</div>
+    </div>
+    <div class="stat-card c-err">
+      <div id="stat-err" class="stat-num">0</div>
+      <div class="stat-label">Errores</div>
+    </div>
+    <div class="stat-card c-list">
+      <div id="stat-list" class="stat-num">3</div>
+      <div class="stat-label">Clips listos</div>
+    </div>
+  </div>
 
   <div id="tab-resumen" class="tab-content active">
-    <div class="grid">
-      <div class="card">
-        <h2>Cola de Trabajos</h2>
-        <div id="cola"></div>
-      </div>
-      <div class="card">
-        <h2>Estado del Sistema</h2>
-        <div id="sistema-info" class="slot">
-          <div class="m">🟢 Motor autónomo activo. Concurrencia lista para procesar subtítulos, cortes verticales y ganchos automáticos.</div>
-        </div>
-      </div>
+    <div class="section-title">SLOTS ACTIVOS</div>
+    <div id="slots-activos">
+      <div class="card-slot" style="color: #8b949e; text-align: center; padding: 20px;">No hay slots activos en este momento.</div>
+    </div>
+
+    <div class="section-title">CLIPS LISTOS RECIENTES</div>
+    <div id="clips-recientes"></div>
+  </div>
+
+  <div id="tab-clips" class="tab-content">
+    <div class="section-title">INVENTARIO DE CLIPS</div>
+    <div id="clips-inventario"></div>
+  </div>
+
+  <div id="tab-lotes" class="tab-content">
+    <div class="section-title">GESTIÓN DE LOTES</div>
+    <div class="card-slot">
+      <div class="clip-title">Lote activo del sistema</div>
+      <div class="clip-meta">Configurado con concurrencia optimizada para procesamiento autónomo sin cookies externas.</div>
     </div>
   </div>
 
-  <div id="tab-cortes" class="tab-content">
-    <div class="card">
-        <h2>Clips Generados con Reproductor Interactivo</h2>
-        <div id="clips"></div>
-    </div>
-  </div>
-
-  <div id="tab-marketing" class="tab-content">
-    <div class="card">
-        <h2>Ganchos y Copys Automáticos para Redes</h2>
-        <div id="marketing-container" class="slot">
-          <div class="m">Aquí verás los copys optimizados para TikTok, Instagram Reels, Facebook y YouTube generados automáticamente para cada trabajo procesado.</div>
-        </div>
+  <div id="tab-incidencias" class="tab-content">
+    <div class="section-title">REGISTRO DE INCIDENCIAS</div>
+    <div id="incidencias-lista">
+      <div class="card-slot" style="color: #8b949e; text-align: center; padding: 20px;">Sin incidencias registradas.</div>
     </div>
   </div>
 
