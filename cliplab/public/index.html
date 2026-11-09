@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, noarchive">
+  <title>ClipLab Pro — Panel de Control y Marketing</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0e1116; color: #e6e9ef; padding: 16px; }
+    h1 { font-size: 20px; margin: 0 0 16px; display: flex; align-items: center; justify-content: space-between; }
+    .nav-tabs { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid #2a313c; padding-bottom: 8px; flex-wrap: wrap; }
+    .tab-btn { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 500; }
+    .tab-btn.active { background: #238636; border-color: #2ea043; color: #fff; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #2a313c; background: #161b22; color: inherit; min-width: 0; }
+    button.primary { padding: 10px 18px; border-radius: 8px; border: 0; background: #238636; color: #fff; font-weight: 600; cursor: pointer; }
+    button.sec { background: #30363d; padding: 6px 10px; border-radius: 6px; font-size: 12px; color: #c9d1d9; border: 1px solid #484f58; cursor: pointer; }
+    #banner { display: none; margin-bottom: 12px; padding: 10px; border-radius: 8px; background: #5a1d1d; font-size: 13px; border: 1px solid #822727; }
+    #conteo { font-size: 13px; color: #8b949e; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    .card h2 { font-size: 15px; margin: 0 0 12px; color: #c9d1d9; border-bottom: 1px solid #21262d; padding-bottom: 6px; }
+    .slot { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 13px; }
+    .slot .t { font-weight: 600; font-size: 14px; margin-bottom: 6px; word-break: break-word; display: flex; align-items: center; gap: 8px; }
+    .slot .m { color: #8b949e; word-break: break-word; margin-top: 4px; }
+    .slot .err { color: #ff7b72; margin-top: 6px; word-break: break-word; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .badge.pendiente { background: #6e7681; color: #fff; }
+    .badge.procesando { background: #bb8009; color: #fff; }
+    .badge.completado { background: #238636; color: #fff; }
+    .badge.error { background: #da3633; color: #fff; }
+    a { color: #58a6ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .player-container { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; margin-top: 8px; aspect-ratio: 9/16; max-height: 380px; display: flex; align-items: center; justify-content: center; }
+    .player-container video { width: 100%; height: 100%; object-fit: contain; }
+    .play-overlay { position: absolute; background: rgba(0,0,0,0.6); border: 2px solid #fff; border-radius: 50%; width: 60px; height: 50px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s; }
+    .play-overlay:hover { transform: scale(1.1); background: rgba(35,134,54,0.8); border-color: #2ea043; }
+    .play-icon { width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent; border-left: 20px solid #fff; margin-left: 4px; }
+    .marketing-box { background: #161b22; border: 1px dashed #30363d; padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 12px; color: #8b949e; }
+  </style>
+</head>
+<body>
+  <h1>
+    <span>ClipLab Pro — Automatización y Marketing</span>
+    <button class="sec" onclick="localStorage.clear(); location.reload();">Reiniciar Sesión</button>
+  </h1>
+
+  <div class="nav-tabs">
+    <button class="tab-btn active" onclick="switchTab('resumen')">Resumen y Cola</button>
+    <button class="tab-btn" onclick="switchTab('cortes')">Inventario de Clips & Play</button>
+    <button class="tab-btn" onclick="switchTab('marketing')">Módulo de Marketing & Copys</button>
+  </div>
+
+  <form id="form-url">
+    <input id="url" type="url" placeholder="Pega el enlace de YouTube o video fuente aquí..." required>
+    <button type="submit" class="primary">Procesar y Encolar</button>
+  </form>
+
+  <div id="banner"></div>
+  <div id="conteo"></div>
+
+  <div id="tab-resumen" class="tab-content active">
+    <div class="grid">
+      <div class="card">
+        <h2>Cola de Trabajos</h2>
+        <div id="cola"></div>
+      </div>
+      <div class="card">
+        <h2>Estado del Sistema</h2>
+        <div id="sistema-info" class="slot">
+          <div class="m">🟢 Motor autónomo activo. Concurrencia lista para procesar subtítulos, cortes verticales y ganchos automáticos.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-cortes" class="tab-content">
+    <div class="card">
+        <h2>Clips Generados con Reproductor Interactivo</h2>
+        <div id="clips"></div>
+    </div>
+  </div>
+
+  <div id="tab-marketing" class="tab-content">
+    <div class="card">
+        <h2>Ganchos y Copys Automáticos para Redes</h2>
+        <div id="marketing-container" class="slot">
+          <div class="m">Aquí verás los copys optimizados para TikTok, Instagram Reels, Facebook y YouTube generados automáticamente para cada trabajo procesado.</div>
+        </div>
+    </div>
+  </div>
+
+  <script src="/panel.js"></script>
+</body>
+</html>
