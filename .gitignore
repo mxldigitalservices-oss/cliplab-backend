@@ -46,3 +46,4 @@ out/
 media/
 audit-integracion.txt
 audit-frontend.txt
+*.bak-*
