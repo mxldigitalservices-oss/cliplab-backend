@@ -8,6 +8,7 @@ import { assertConfig, securityHeaders, rateLimit, isAuthed, requireAuth, login,
 import { PLATAFORMAS, listarSesiones, guardarSesion, borrarSesion, tieneSesion, marcarTest, normalizarSesion, validarSesion } from "./sesiones.js";
 import { encolar, iniciarWorker, recuperarJobs } from "./queue.js";
 import { hAnalizar, hCortar, hPublicar, ytUrl } from "./pipeline.js";
+import rutasMotor from "./rutas-motor.js";
 import { probarSesion, agenteOcupado } from "./agent/index.js";
 import { limpiar, usoDiscoMb, borrarArchivoClip } from "./janitor.js";
 import { hLoteItem, iniciarDespachador } from "./lotes.js";
@@ -44,6 +45,7 @@ app.get("/", (req, res) => {
 
 // ===== 3. Todo lo demás exige la llave maestra =====
 app.use(requireAuth);
+app.use("/api/motor", rutasMotor);
 app.use(express.static(PUB, { index: false, dotfiles: "deny" }));
 
 app.get("/media/:token.mp4", h(async (req, res) => {

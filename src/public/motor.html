@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>ClipLab · Motor local</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--tx:#e6edf3;--mut:#8b949e;--ok:#3fb950;--bad:#f85149;--acc:#ffd400}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0}h2{font-size:15px;margin:0 0 10px;color:var(--acc)}h3{font-size:14px;margin:0 0 8px}
+main{max-width:960px;margin:0 auto;padding:16px;display:grid;gap:16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+form{display:flex;gap:8px;flex-wrap:wrap}
+input{flex:1 1 260px;background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:10px}
+button,a.btn{background:var(--acc);color:#000;border:0;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;text-decoration:none;font-size:13px}
+.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line);margin-left:6px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.mut{color:var(--mut)}
+.fila{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line);word-break:break-all}
+.fila:first-child{border-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.clip{border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--bg)}
+video{width:100%;aspect-ratio:9/16;background:#000;border-radius:8px}
+.cap{font-size:13px;margin:6px 0}.acciones{display:flex;gap:6px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header><h1>ClipLab · Motor local</h1><div id="salud" class="mut">Comprobando...</div></header>
+<main>
+  <section>
+    <h2>Nuevo trabajo</h2>
+    <form id="f">
+      <input id="fuente" placeholder="URL de YouTube o archivo en media/ (ej. entrada.mp4)" required autocomplete="off">
+      <button type="submit">Procesar</button>
+    </form>
+    <p id="msg" class="mut"></p>
+  </section>
+  <section><h2>Trabajos</h2><div id="trabajos" class="mut">Sin trabajos.</div></section>
+  <section><h2>Biblioteca</h2><div id="biblioteca" class="mut">Aún no hay videos.</div></section>
+</main>
+<script>
+const API = "/api/motor";
+const $ = (s) => document.querySelector(s);
+const el = (t, a = {}, ...c) => { const e = document.createElement(t); Object.assign(e, a); e.append(...c); return e; };
+
+async function pedir(ruta, opt = {}) {
+  const r = await fetch(API + ruta, { credentials: "same-origin", headers: { "content-type": "application/json" }, ...opt });
+  const tipo = r.headers.get("content-type") || "";
+  if (r.status === 401 || r.redirected || !tipo.includes("json")) throw new Error("Sesión no válida: abre el panel e inicia sesión.");
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || "Error " + r.status);
+  return d;
+}
+
+function badge(nombre, ok) {
+  return el("span", { className: "badge " + (ok ? "ok" : "bad"), textContent: nombre + (ok ? " ✓" : " ✗") });
+}
+
+async function salud() {
+  try {
+    const s = await pedir("/salud");
+    const box = $("#salud"); box.textContent = "";
+    box.append(badge("ffmpeg", s.ffmpeg), badge("whisper", s.whisper), badge("yt-dlp", s.ytdlp));
+  } catch (e) { $("#salud").textContent = e.message; }
+}
+
+function pintarTrabajos(lista) {
+  const box = $("#trabajos"); box.textContent = "";
+  if (!lista.length) { box.textContent = "Sin trabajos."; return; }
+  for (const j of lista) {
+    const est = el("span", { className: j.estado === "error" ? "bad" : j.estado === "listo" ? "ok" : "mut",
+      textContent: j.estado + (j.clips != null ? ` (${j.clips} clips)` : "") + (j.error ? ` — ${j.error}` : "") });
+    box.append(el("div", { className: "fila" }, el("span", { textContent: j.fuente }), est));
+  }
+}
+
+let firmaBib = "";
+function pintarBiblioteca(lista) {
+  const firma = JSON.stringify(lista);
+  if (firma === firmaBib) return;
+  firmaBib = firma;
+  const box = $("#biblioteca"); box.textContent = "";
+  if (!lista.length) { box.textContent = "Aún no hay videos."; return; }
+  for (const v of lista) {
+    box.append(el("h3", { textContent: v.nombre }));
+    const g = el("div", { className: "grid" });
+    for (const c of v.clips) {
+      const url = `${API}/archivo/${encodeURIComponent(v.nombre)}/${encodeURIComponent(c.file)}`;
+      const vid = el("video", { controls: true, preload: "none", src: url });
+      const texto = `${c.caption}\n${(c.hashtags || []).join(" ")}`;
+      const copiar = el("button", { textContent: "Copiar texto" });
+      copiar.onclick = () => navigator.clipboard.writeText(texto).then(() => { copiar.textContent = "Copiado"; setTimeout(() => (copiar.textContent = "Copiar texto"), 1500); });
+      const bajar = el("a", { className: "btn", href: url, download: c.file, textContent: "Descargar" });
+      g.append(el("div", { className: "clip" }, vid,
+        el("div", { className: "cap", textContent: `#${c.id} · ${c.duration}s · puntaje ${c.score}` }),
+        el("div", { className: "cap mut", textContent: texto }),
+        el("div", { className: "acciones" }, bajar, copiar)));
+    }
+    box.append(g);
+  }
+}
+
+let ocupado = false;
+async function refrescar() {
+  if (ocupado) return;
+  ocupado = true;
+  try {
+    const [t, b] = await Promise.all([pedir("/trabajos"), pedir("/biblioteca")]);
+    pintarTrabajos(t); pintarBiblioteca(b);
+  } catch (e) { $("#msg").textContent = e.message; }
+  ocupado = false;
+}
+
+$("#f").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const v = $("#fuente").value.trim();
+  const body = /^https?:\/\//i.test(v) ? { url: v } : { archivo: v };
+  $("#msg").textContent = "Enviando...";
+  try {
+    await pedir("/trabajos", { method: "POST", body: JSON.stringify(body) });
+    $("#msg").textContent = "En cola.";
+    $("#fuente").value = "";
+    refrescar();
+  } catch (e) { $("#msg").textContent = e.message; }
+});
+
+salud(); refrescar();
+setInterval(refrescar, 4000);
+setInterval(salud, 60000);
+</script>
+</body>
+</html>
