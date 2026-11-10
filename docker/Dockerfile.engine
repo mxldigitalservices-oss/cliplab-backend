@@ -1,0 +1,19 @@
+FROM node:20-bookworm-slim AS whisper
+ARG WHISPER_MODEL_SIZE=base
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt
+RUN git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git
+WORKDIR /opt/whisper.cpp
+RUN cmake -B build -DBUILD_SHARED_LIBS=OFF && cmake --build build -j --config Release
+RUN sh ./models/download-ggml-model.sh ${WHISPER_MODEL_SIZE}
+
+FROM node:20-bookworm-slim
+ARG WHISPER_MODEL_SIZE=base
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=whisper /opt/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=whisper /opt/whisper.cpp/models/ggml-${WHISPER_MODEL_SIZE}.bin /models/model.bin
+ENV WHISPER_BIN=whisper-cli WHISPER_MODEL=/models/model.bin WHISPER_LANG=es
+WORKDIR /app
+COPY . .

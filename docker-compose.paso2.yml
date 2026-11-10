@@ -1,0 +1,13 @@
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.engine
+      args:
+        WHISPER_MODEL_SIZE: base
+    working_dir: /app
+    volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+      - ./media:/app/media
+      - ./out:/app/out
