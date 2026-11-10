@@ -1,8 +1,11 @@
 import { api, getLlave, setLlave } from './api.js';
 import { toast } from './ui.js';
-import { renderResumen, renderClips, renderLotes, renderIncidencias, incidenciasDe } from './views.js';
+import {
+  renderResumen, renderClips, renderLotes, renderIncidencias, renderMarketing, incidenciasDe,
+} from './views.js';
 
 const POLL_MS = 4000;
+const INST_MS = 12000;
 const $ = (s) => document.querySelector(s);
 
 const state = {
@@ -12,6 +15,10 @@ const state = {
   abiertos: new Set(),
   enVuelo: false,
   pausado: false,
+  firma: '',
+  inst: { estado: 'cargando', data: null, msg: '' },
+  instEnVuelo: false,
+  instTs: 0,
 };
 
 const roots = {
@@ -20,6 +27,10 @@ const roots = {
   clipsTotal: $('#clips-total'),
   lotes: $('#lotes-lista'),
   inc: $('#inc-lista'),
+  marketing: {
+    kpis: $('#m-kpis'), actividad: $('#m-actividad'), claves: $('#m-claves'),
+    lotes: $('#m-lotes'), publicacion: $('#m-publicacion'), nota: $('#m-nota'),
+  },
 };
 
 function contexto() {
@@ -34,6 +45,10 @@ function contexto() {
   return { lotePorId, variantesPorLote, abiertos: state.abiertos, onReintentar: reintentar, onToggleLote: alternarLote };
 }
 
+function renderMarketingVista() {
+  if (state.data) renderMarketing(roots.marketing, state.data, state.inst);
+}
+
 function render() {
   if (!state.data) return;
   const ctx = contexto();
@@ -41,6 +56,7 @@ function render() {
   renderClips(roots.clips, roots.clipsTotal, state.data, ctx, state.filtro);
   renderLotes(roots.lotes, state.data, ctx);
   renderIncidencias(roots.inc, state.data, ctx);
+  renderMarketingVista();
 
   const inc = incidenciasDe(state.data).length;
   document.querySelector('[data-count="clips"]').textContent = state.data.clips.length;
@@ -64,13 +80,35 @@ function pedirLlave(mensaje) {
   if (!dlg.open) dlg.showModal();
 }
 
-async function tick() {
+async function cargarInst(forzar = false) {
+  if (state.instEnVuelo) return;
+  if (!forzar && Date.now() - state.instTs < INST_MS) return;
+  state.instEnVuelo = true;
+  try {
+    state.inst = { estado: 'ok', data: await api.instantanea(), msg: '' };
+  } catch (e) {
+    state.inst = { estado: 'error', data: null, msg: e.message };
+  } finally {
+    state.instTs = Date.now();
+    state.instEnVuelo = false;
+    renderMarketingVista();
+  }
+}
+
+async function tick(forzar = false) {
   if (state.enVuelo || state.pausado || document.hidden) return;
   state.enVuelo = true;
   try {
-    state.data = await api.estado();
+    const d = await api.estado();
+    state.data = d;
     conexion(true);
-    render();
+    // Render silencioso: solo si cambian los datos o cada 30 s (para refrescar "hace X")
+    const firma = JSON.stringify([d.conteo, d.trabajos, d.clips]) + '|' + Math.floor(Date.now() / 30000);
+    if (forzar === true || firma !== state.firma) {
+      state.firma = firma;
+      render();
+    }
+    if (state.tab === 'marketing') cargarInst();
   } catch (e) {
     if (e.status === 401) {
       state.pausado = true;
@@ -89,7 +127,7 @@ async function reintentar(id, boton) {
   try {
     await api.reintentar(id);
     toast(`Lote #${id} reencolado`, 'ok');
-    tick();
+    tick(true);
   } catch (e) {
     toast(e.message, 'error');
     if (boton) boton.disabled = false;
@@ -107,6 +145,7 @@ function activarTab(nombre) {
   sessionStorage.setItem('tab', nombre);
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('activa', b.dataset.tab === nombre));
   document.querySelectorAll('.vista').forEach((v) => { v.hidden = v.dataset.vista !== nombre; });
+  if (nombre === 'marketing') cargarInst(true);
 }
 
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => activarTab(b.dataset.tab)));
@@ -123,7 +162,7 @@ $('#form-url').addEventListener('submit', async (ev) => {
     const r = await api.encolar(input.value.trim());
     input.value = '';
     toast(`Lote #${r.id} encolado`, 'ok');
-    tick();
+    tick(true);
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -131,6 +170,7 @@ $('#form-url').addEventListener('submit', async (ev) => {
   }
 });
 
+$('#btn-ahora').addEventListener('click', () => { tick(true); if (state.tab === 'marketing') cargarInst(true); });
 $('#btn-llave').addEventListener('click', () => pedirLlave('Actualiza la llave maestra.'));
 $('#llave-cancelar').addEventListener('click', () => $('#dlg-llave').close());
 $('#form-llave').addEventListener('submit', (ev) => {
@@ -138,11 +178,11 @@ $('#form-llave').addEventListener('submit', (ev) => {
   setLlave($('#input-llave').value);
   $('#dlg-llave').close();
   state.pausado = false;
-  tick();
+  tick(true);
 });
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 
 activarTab(state.tab);
-tick();
-setInterval(tick, POLL_MS);
+tick(true);
+setInterval(() => tick(), POLL_MS);

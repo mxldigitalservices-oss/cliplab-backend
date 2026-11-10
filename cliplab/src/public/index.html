@@ -18,6 +18,7 @@
       </div>
     </div>
     <div class="top-actions">
+      <button id="btn-ahora" class="btn ghost small" type="button" title="Actualizar ahora">⟳</button>
       <button id="btn-llave" class="btn ghost small" type="button">🔑 Llave</button>
     </div>
   </header>
@@ -32,6 +33,7 @@
     <button class="tab" role="tab" data-tab="clips">Clips <span class="count" data-count="clips">0</span></button>
     <button class="tab" role="tab" data-tab="lotes">Lotes / Variantes <span class="count" data-count="lotes">0</span></button>
     <button class="tab" role="tab" data-tab="incidencias">Incidencias <span class="count alerta" data-count="incidencias">0</span></button>
+    <button class="tab" role="tab" data-tab="marketing">Marketing y Analíticas</button>
   </nav>
 
   <main>
@@ -67,6 +69,25 @@
     <section class="vista" data-vista="incidencias" hidden>
       <div id="inc-lista" class="lista"></div>
     </section>
+
+    <section class="vista" data-vista="marketing" hidden>
+      <div id="m-kpis" class="kpis"></div>
+      <h2>Producción de los últimos 7 días</h2>
+      <div id="m-actividad" class="chart"></div>
+      <div class="dos">
+        <div>
+          <h2>Palabras clave dominantes</h2>
+          <div id="m-claves" class="lista"></div>
+        </div>
+        <div>
+          <h2>Rendimiento por lote</h2>
+          <div id="m-lotes" class="lista"></div>
+        </div>
+      </div>
+      <h2>Alcance y publicación</h2>
+      <div id="m-publicacion" class="kpis"></div>
+      <p id="m-nota" class="muted nota"></p>
+    </section>
   </main>
 
   <dialog id="dlg-llave">
@@ -75,7 +96,7 @@
       <p class="muted" id="llave-msg">Introduce la llave para acceder a la API.</p>
       <input id="input-llave" type="password" autocomplete="current-password" placeholder="MASTER_KEY">
       <div class="dlg-actions">
-        <button class="btn ghost" value="cancel" type="button" id="llave-cancelar">Cancelar</button>
+        <button class="btn ghost" type="button" id="llave-cancelar">Cancelar</button>
         <button class="btn primary" type="submit">Guardar</button>
       </div>
     </form>

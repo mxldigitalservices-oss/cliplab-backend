@@ -47,6 +47,7 @@ async function pedir(ruta, { method = 'GET', body } = {}) {
 export const api = {
   salud: () => pedir('/api/salud'),
   estado: () => pedir('/api/estado'),
+  instantanea: () => pedir('/api/panel/instantanea'),
   encolar: (url) => pedir('/api/trabajos', { method: 'POST', body: { url } }),
   reintentar: (id) => pedir(`/api/trabajos/${encodeURIComponent(id)}/reintentar`, { method: 'POST' }),
   urlDescarga: (id) => `/api/clips/${encodeURIComponent(id)}/descargar${llave ? `?key=${encodeURIComponent(llave)}` : ''}`,

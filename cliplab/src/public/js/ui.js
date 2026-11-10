@@ -32,6 +32,9 @@ export function hace(iso) {
   return `hace ${Math.floor(s / 86400)} d`;
 }
 
+export const num = (n) => new Intl.NumberFormat('es-DO').format(Number(n) || 0);
+export const pct = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—');
+
 export const badge = (estado) => el('span', { class: `badge ${estado}`, text: estado });
 
 export function chips(lista) {
@@ -42,6 +45,7 @@ export function chips(lista) {
 
 export function toast(mensaje, tipo = 'info') {
   const cont = document.getElementById('toasts');
+  while (cont.children.length >= 3) cont.firstChild.remove();
   const t = el('div', { class: `toast ${tipo}`, text: mensaje });
   cont.append(t);
   setTimeout(() => t.remove(), 3800);
