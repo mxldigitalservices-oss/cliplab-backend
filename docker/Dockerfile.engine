@@ -10,10 +10,11 @@ RUN sh ./models/download-ggml-model.sh ${WHISPER_MODEL_SIZE}
 
 FROM node:20-bookworm-slim
 ARG WHISPER_MODEL_SIZE=base
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libgomp1 \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libgomp1 fontconfig fonts-montserrat fonts-dejavu-core \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=whisper /opt/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper /opt/whisper.cpp/models/ggml-${WHISPER_MODEL_SIZE}.bin /models/model.bin
-ENV WHISPER_BIN=whisper-cli WHISPER_MODEL=/models/model.bin WHISPER_LANG=es
+ENV WHISPER_BIN=whisper-cli WHISPER_MODEL=/models/model.bin WHISPER_LANG=es SUB_FONT=Montserrat
 WORKDIR /app
 COPY . .
