@@ -1,10 +1,44 @@
+# Dependencias
 node_modules/
+
+# Secretos y sesiones: NUNCA al repositorio
 .env
 .env.*
 !.env.example
-clips/
-data/
-*.mp4
-cookies.txt
-sesion-*.json
 cookies/
+cookies*.txt
+*cookies*.json
+sesion-*.json
+*.pem
+*.key
+
+# Datos generados por el motor
+/data/*
+!/data/.gitkeep
+/clips/*
+!/clips/.gitkeep
+*.mp4
+*.mp3
+*.vtt
+
+# Editor / sistema
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Respaldos y comprimidos
+*.bak
+*.old
+*.orig
+*.zip
+*.tar
+*.tgz
+*.gz
+*.7z
+*.rar
+
+# Logs
+*.log
+npm-debug.log*

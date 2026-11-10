@@ -1,0 +1,11 @@
+.git
+node_modules
+.env
+.env.*
+cookies
+data
+clips
+tests
+docs
+*.md
+*.log
