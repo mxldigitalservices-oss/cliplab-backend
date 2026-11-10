@@ -40,7 +40,7 @@ export const badge = (estado) => el('span', { class: `badge ${estado}`, text: es
 export function chips(lista) {
   const items = Array.isArray(lista) ? lista.slice(0, 10) : [];
   if (!items.length) return null;
-  return el('div', { class: 'chips' }, items.map((p) => el('span', { class: 'chip', text: p })));
+  return el('div', { class: 'chips' }, (items ?? []).map((p) => el('span', { class: 'chip', text: p })));
 }
 
 export function toast(mensaje, tipo = 'info') {

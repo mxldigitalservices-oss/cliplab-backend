@@ -30,7 +30,7 @@ function tarjetaClip(c, lotePorId) {
 
 function filaTrabajo(t, ctx) {
   const vs = ctx.variantesPorLote.get(t.id) || [];
-  const listas = vs.filter((v) => v.estado === 'completado').length;
+  const listas = (vs ?? []).filter((v) => v.estado === 'completado').length;
   return el('article', { class: `card ${t.estado}` },
     el('div', { class: 'card-head' }, badge(t.estado), el('span', { class: 'muted meta', text: `Lote #${t.id} · ${hace(t.updated_at)}` })),
     el('h3', { class: 'card-title', text: t.video_titulo || t.url }),
@@ -50,23 +50,23 @@ export function renderResumen(roots, data, ctx) {
     ['procesando', c.procesando || 0, 'Procesando'],
     ['completado', c.completado || 0, 'Completados'],
     ['error', c.error || 0, 'Errores'],
-    ['pro', data.clips.filter((x) => x.estado === 'completado').length, 'Clips listos'],
+    ['pro', (data.clips ?? []).filter((x) => x.estado === 'completado').length, 'Clips listos'],
   ];
   roots.kpis.innerHTML = '';
-  kpis.forEach(([k, v, label]) => roots.kpis.append(
+  (kpis ?? []).forEach(([k, v, label]) => roots.kpis.append(
     el('div', { class: `kpi ${k}` }, el('b', { text: num(v) }), el('span', { text: label }))
   ));
 
   roots.activos.innerHTML = '';
-  const activosT = data.trabajos.filter((t) => t.estado === 'procesando' || t.estado === 'pendiente');
-  const activosC = data.clips.filter((x) => x.estado === 'procesando');
-  activosT.forEach((t) => roots.activos.append(filaTrabajo(t, ctx)));
-  activosC.forEach((x) => roots.activos.append(tarjetaClip(x, ctx.lotePorId)));
+  const activosT = (data.trabajos ?? []).filter((t) => t.estado === 'procesando' || t.estado === 'pendiente');
+  const activosC = (data.clips ?? []).filter((x) => x.estado === 'procesando');
+  (activosT ?? []).forEach((t) => roots.activos.append(filaTrabajo(t, ctx)));
+  (activosC ?? []).forEach((x) => roots.activos.append(tarjetaClip(x, ctx.lotePorId)));
   if (!activosT.length && !activosC.length) roots.activos.append(vacio('No hay slots activos en este momento.'));
 
   roots.listos.innerHTML = '';
-  const listos = data.clips.filter((x) => x.estado === 'completado').slice(0, 4);
-  listos.forEach((x) => roots.listos.append(tarjetaClip(x, ctx.lotePorId)));
+  const listos = (data.clips ?? []).filter((x) => x.estado === 'completado').slice(0, 4);
+  (listos ?? []).forEach((x) => roots.listos.append(tarjetaClip(x, ctx.lotePorId)));
   if (!listos.length) roots.listos.append(vacio('Aún no hay clips exportados.'));
 
   roots.recientes.innerHTML = '';
@@ -77,12 +77,12 @@ export function renderResumen(roots, data, ctx) {
 /* ---------- CLIPS ---------- */
 export function renderClips(root, totalEl, data, ctx, filtro) {
   const q = filtro.q.trim().toLowerCase();
-  const lista = data.clips.filter((c) =>
+  const lista = (data.clips ?? []).filter((c) =>
     (filtro.estado === 'todos' || c.estado === filtro.estado) &&
     (!q || `${c.titulo} ${c.resumen || ''}`.toLowerCase().includes(q))
   );
   root.innerHTML = '';
-  lista.forEach((c) => root.append(tarjetaClip(c, ctx.lotePorId)));
+  (lista ?? []).forEach((c) => root.append(tarjetaClip(c, ctx.lotePorId)));
   if (!lista.length) root.append(vacio('No hay clips que coincidan con el filtro.'));
   totalEl.textContent = `${lista.length} de ${data.clips.length}`;
 }
@@ -90,9 +90,9 @@ export function renderClips(root, totalEl, data, ctx, filtro) {
 /* ---------- LOTES / VARIANTES ---------- */
 export function renderLotes(root, data, ctx) {
   root.innerHTML = '';
-  data.trabajos.forEach((t) => {
+  (data.trabajos ?? []).forEach((t) => {
     const variantes = ctx.variantesPorLote.get(t.id) || [];
-    const listas = variantes.filter((v) => v.estado === 'completado').length;
+    const listas = (variantes ?? []).filter((v) => v.estado === 'completado').length;
     const abierto = ctx.abiertos.has(t.id);
 
     const card = el('article', { class: `card ${t.estado}` },
@@ -120,7 +120,7 @@ export function renderLotes(root, data, ctx) {
     );
 
     if (abierto && variantes.length) {
-      card.append(el('div', { class: 'variantes' }, variantes.map((v) =>
+      card.append(el('div', { class: 'variantes' }, (variantes ?? []).map((v) =>
         el('div', { class: 'variante' },
           el('div', { class: 'card-head' }, badge(v.estado), el('span', { class: 'muted meta', text: `${fmtTiempo(v.marca_tiempo)} – ${fmtTiempo(v.marca_fin)}` })),
           el('strong', { text: v.titulo }),
@@ -138,13 +138,13 @@ export function renderLotes(root, data, ctx) {
 
 /* ---------- INCIDENCIAS ---------- */
 export function incidenciasDe(data) {
-  const lotePorId = new Map(data.trabajos.map((t) => [t.id, t]));
+  const lotePorId = new Map((data.trabajos ?? []).map((t) => [t.id, t]));
   const items = [];
-  data.trabajos.forEach((t) => {
+  (data.trabajos ?? []).forEach((t) => {
     if (t.estado === 'error') items.push({ tipo: 'error', fecha: t.updated_at, trabajo: t });
     else if (t.error) items.push({ tipo: 'advertencia', fecha: t.updated_at, trabajo: t });
   });
-  data.clips.forEach((c) => {
+  (data.clips ?? []).forEach((c) => {
     if (c.estado !== 'error') return;
     const padre = lotePorId.get(c.trabajo_id);
     if (padre && padre.estado === 'error') return;
@@ -156,7 +156,7 @@ export function incidenciasDe(data) {
 export function renderIncidencias(root, data, ctx) {
   root.innerHTML = '';
   const items = incidenciasDe(data);
-  items.forEach((i) => {
+  (items ?? []).forEach((i) => {
     if (i.trabajo) {
       const t = i.trabajo;
       root.append(el('article', { class: `card ${i.tipo === 'error' ? 'error' : ''}` },
@@ -202,7 +202,7 @@ function renderPublicacion(root, notaEl, inst) {
     return;
   }
   const filas = aplanar(inst.data);
-  filas.forEach(([e, v]) => root.append(el('div', { class: 'kpi pro' }, el('b', { text: v }), el('span', { text: e }))));
+  (filas ?? []).forEach(([e, v]) => root.append(el('div', { class: 'kpi pro' }, el('b', { text: v }), el('span', { text: e }))));
   notaEl.textContent = filas.length
     ? 'Valores leídos en vivo del endpoint /api/panel/instantanea del motor de automatización.'
     : 'El endpoint respondió sin métricas numéricas todavía.';
@@ -212,10 +212,10 @@ export function renderMarketing(roots, data, inst) {
   const lotes = data.trabajos;
   const clips = data.clips;
   const c = data.conteo || {};
-  const listos = clips.filter((x) => x.estado === 'completado');
-  const cerradosClips = listos.length + clips.filter((x) => x.estado === 'error').length;
+  const listos = (clips ?? []).filter((x) => x.estado === 'completado');
+  const cerradosClips = listos.length + (clips ?? []).filter((x) => x.estado === 'error').length;
   const cerradosLotes = (c.completado || 0) + (c.error || 0);
-  const durMedia = listos.length ? listos.reduce((s, x) => s + dur(x), 0) / listos.length : 0;
+  const durMedia = listos.length ? (listos ?? []).reduce((s, x) => s + dur(x), 0) / listos.length : 0;
   const totalLotes = Object.values(c).reduce((s, n) => s + Number(n || 0), 0);
 
   roots.kpis.innerHTML = '';
@@ -234,18 +234,18 @@ export function renderMarketing(roots, data, inst) {
     const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
     dias.push({ d, k: claveDia(d), total: 0, ok: 0, err: 0 });
   }
-  clips.forEach((cl) => {
-    const dia = dias.find((x) => x.k === claveDia(new Date(cl.created_at)));
+  (clips ?? []).forEach((cl) => {
+    const dia = (dias ?? []).find((x) => x.k === claveDia(new Date(cl.created_at)));
     if (!dia) return;
     dia.total++;
     if (cl.estado === 'completado') dia.ok++;
     if (cl.estado === 'error') dia.err++;
   });
-  const max = Math.max(1, ...dias.map((x) => x.total));
+  const max = Math.max(1, ...(dias ?? []).map((x) => x.total));
   const h = (n) => `height:${(n / max) * 100}%`;
   roots.actividad.innerHTML = '';
   roots.actividad.append(
-    el('div', { class: 'cols' }, dias.map((x) =>
+    el('div', { class: 'cols' }, (dias ?? []).map((x) =>
       el('div', { class: 'col' },
         el('span', { class: 'n', text: x.total || '' }),
         el('div', { class: 'pila' },
@@ -263,11 +263,11 @@ export function renderMarketing(roots, data, inst) {
 
   // Palabras clave
   const freq = new Map();
-  lotes.forEach((t) => (Array.isArray(t.palabras_clave) ? t.palabras_clave : []).forEach((p) => freq.set(p, (freq.get(p) || 0) + 1)));
+  (lotes ?? []).forEach((t) => (Array.isArray(t.palabras_clave) ? t.palabras_clave : []).forEach((p) => freq.set(p, (freq.get(p) || 0) + 1)));
   const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
   roots.claves.innerHTML = '';
   const maxF = top.length ? top[0][1] : 1;
-  top.forEach(([p, n]) => roots.claves.append(
+  (top ?? []).forEach(([p, n]) => roots.claves.append(
     el('div', { class: 'fila-barra' },
       el('span', { class: 'e', text: p }),
       el('div', { class: 'b' }, el('span', { style: `width:${(n / maxF) * 100}%` })),
@@ -278,13 +278,13 @@ export function renderMarketing(roots, data, inst) {
   // Rendimiento por lote
   roots.lotes.innerHTML = '';
   lotes.slice(0, 8).forEach((t) => {
-    const vs = clips.filter((x) => x.trabajo_id === t.id);
-    const ok = vs.filter((x) => x.estado === 'completado');
+    const vs = (clips ?? []).filter((x) => x.trabajo_id === t.id);
+    const ok = (vs ?? []).filter((x) => x.estado === 'completado');
     roots.lotes.append(el('div', { class: 'fila-lote' },
       el('div', { class: 'card-head' }, badge(t.estado), el('span', { class: 'muted meta', text: `Lote #${t.id}` })),
       el('span', { class: 't', text: t.video_titulo || t.url }),
       el('span', { class: 'muted meta', text:
-        `${ok.length}/${vs.length} variantes · éxito ${pct(ok.length, vs.length)} · ${fmtTiempo(ok.reduce((s, x) => s + dur(x), 0))} de contenido listo` })
+        `${ok.length}/${vs.length} variantes · éxito ${pct(ok.length, vs.length)} · ${fmtTiempo((ok ?? []).reduce((s, x) => s + dur(x), 0))} de contenido listo` })
     ));
   });
   if (!lotes.length) roots.lotes.append(vacio('Sin lotes para analizar.'));
