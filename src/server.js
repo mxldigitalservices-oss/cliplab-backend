@@ -46,6 +46,7 @@ app.get("/", (req, res) => {
 // ===== 3. Todo lo demás exige la llave maestra =====
 app.use(requireAuth);
 app.use("/api/motor", rutasMotor);
+app.get("/motor.html", (req, res) => res.set("Content-Security-Policy", CSP_PANEL).sendFile("motor.html", { root: PUB, dotfiles: "deny" }));
 app.use(express.static(PUB, { index: false, dotfiles: "deny" }));
 
 app.get("/media/:token.mp4", h(async (req, res) => {

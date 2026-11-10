@@ -45,3 +45,4 @@ npm-debug.log*
 out/
 media/
 audit-integracion.txt
+audit-frontend.txt
