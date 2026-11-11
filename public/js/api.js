@@ -1,53 +1,99 @@
-const KEY_STORE = 'mk';
+const CLAVE_STORAGE = 'cliplab.masterKey';
 const TIMEOUT_MS = 8000;
 
-let llave = sessionStorage.getItem(KEY_STORE) || '';
+export function leerLlave() {
+  try {
+    return localStorage.getItem(CLAVE_STORAGE) || '';
+  } catch {
+    return '';
+  }
+}
 
-export const getLlave = () => llave;
-
-export function setLlave(valor) {
-  llave = String(valor || '').trim();
-  if (llave) sessionStorage.setItem(KEY_STORE, llave);
-  else sessionStorage.removeItem(KEY_STORE);
+export function guardarLlave(valor) {
+  try {
+    if (valor) {
+      localStorage.setItem(CLAVE_STORAGE, valor);
+    } else {
+      localStorage.removeItem(CLAVE_STORAGE);
+    }
+  } catch {
+    // Navegador sin almacenamiento disponible: se ignora.
+  }
 }
 
 export class ApiError extends Error {
-  constructor(mensaje, status = 0) {
+  constructor(mensaje, status, cancelado = false) {
     super(mensaje);
+    this.name = 'ApiError';
     this.status = status;
+    this.cancelado = cancelado;
+    this.requiereLlave = status === 401;
   }
 }
 
-async function pedir(ruta, { method = 'GET', body } = {}) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  const headers = { 'Content-Type': 'application/json' };
-  if (llave) headers['x-master-key'] = llave;
+async function solicitar(ruta, opciones = {}) {
+  const { metodo = 'GET', cuerpo, signal } = opciones;
+
+  const controlador = new AbortController();
+  let vencido = false;
+  const temporizador = setTimeout(() => {
+    vencido = true;
+    controlador.abort();
+  }, TIMEOUT_MS);
+
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(temporizador);
+      throw new ApiError('Solicitud cancelada', 0, true);
+    }
+    signal.addEventListener('abort', () => controlador.abort(), { once: true });
+  }
+
+  const cabeceras = { Accept: 'application/json' };
+  const llave = leerLlave();
+  if (llave) {
+    cabeceras['x-master-key'] = llave;
+  }
+  if (cuerpo !== undefined) {
+    cabeceras['Content-Type'] = 'application/json';
+  }
+
+  let respuesta;
   try {
-    const r = await fetch(ruta, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-      signal: ctrl.signal,
+    respuesta = await fetch(ruta, {
+      method: metodo,
+      headers: cabeceras,
+      body: cuerpo !== undefined ? JSON.stringify(cuerpo) : undefined,
+      signal: controlador.signal,
       cache: 'no-store',
     });
-    let data = {};
-    try { data = await r.json(); } catch (_) { /* respuesta sin JSON */ }
-    if (!r.ok) throw new ApiError(data.error || `Error HTTP ${r.status}`, r.status);
-    return data;
-  } catch (e) {
-    if (e instanceof ApiError) throw e;
-    if (e.name === 'AbortError') throw new ApiError('Tiempo de espera agotado');
-    throw new ApiError('Sin conexión con el servidor');
+  } catch {
+    if (signal?.aborted && !vencido) {
+      throw new ApiError('Solicitud cancelada', 0, true);
+    }
+    throw new ApiError(vencido ? 'El servidor no respondio a tiempo' : 'Sin conexion con el servidor', 0);
   } finally {
-    clearTimeout(timer);
+    clearTimeout(temporizador);
   }
+
+  let datos = null;
+  try {
+    datos = await respuesta.json();
+  } catch {
+    datos = null;
+  }
+
+  if (!respuesta.ok) {
+    throw new ApiError((datos && datos.error) || 'Error ' + respuesta.status, respuesta.status);
+  }
+
+  return datos;
 }
 
-export const api = {
-  salud: () => pedir('/api/salud'),
-  estado: () => pedir('/api/estado'),
-  encolar: (url) => pedir('/api/trabajos', { method: 'POST', body: { url } }),
-  reintentar: (id) => pedir(`/api/trabajos/${encodeURIComponent(id)}/reintentar`, { method: 'POST' }),
-  urlDescarga: (id) => `/api/clips/${encodeURIComponent(id)}/descargar${llave ? `?key=${encodeURIComponent(llave)}` : ''}`,
-};
+export function obtenerEstado(signal) {
+  return solicitar('/api/panel/estado', { signal });
+}
+
+export function encolarVideo(url) {
+  return solicitar('/api/panel/encolar', { metodo: 'POST', cuerpo: { url } });
+}

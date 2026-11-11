@@ -1,148 +1,353 @@
-import { api, getLlave, setLlave } from './api.js';
-import { toast } from './ui.js';
-import { renderResumen, renderClips, renderLotes, renderIncidencias, incidenciasDe } from './views.js';
+import { obtenerEstado, encolarVideo, leerLlave, guardarLlave } from './api.js';
+import * as V from './views.js';
 
-const POLL_MS = 4000;
-const $ = (s) => document.querySelector(s);
+const INTERVALO_MS = 4000;
+const INTERVALO_MAX_MS = 30000;
+const VISTAS = ['resumen', 'conexiones', 'clips', 'lotes', 'incidencias', 'marketing'];
 
-const state = {
-  data: null,
-  tab: sessionStorage.getItem('tab') || 'resumen',
-  filtro: { estado: 'todos', q: '' },
-  abiertos: new Set(),
-  enVuelo: false,
+const $ = (id) => document.getElementById(id);
+
+const estado = {
+  datos: null,
+  firma: '',
+  vista: 'resumen',
+  filtroEstado: 'todos',
+  filtroTexto: '',
+  ocultarResueltas: false,
+  errores: 0,
   pausado: false,
+  enVuelo: false,
+  temporizador: null,
+  controlador: null,
+  temporizadorAviso: null,
+  temporizadorBusqueda: null,
 };
 
-const roots = {
-  resumen: { kpis: $('#r-kpis'), activos: $('#r-activos'), listos: $('#r-listos'), recientes: $('#r-recientes') },
-  clips: $('#clips-lista'),
-  clipsTotal: $('#clips-total'),
-  lotes: $('#lotes-lista'),
-  inc: $('#inc-lista'),
-};
+/* ---------- Indicadores y avisos ---------- */
 
-function contexto() {
-  const lotePorId = new Map();
-  const variantesPorLote = new Map();
-  state.data.trabajos.forEach((t) => lotePorId.set(t.id, t));
-  state.data.clips.forEach((c) => {
-    if (!variantesPorLote.has(c.trabajo_id)) variantesPorLote.set(c.trabajo_id, []);
-    variantesPorLote.get(c.trabajo_id).push(c);
+function setSync(tipo, texto) {
+  $('sync').dataset.estado = tipo;
+  $('sync-texto').textContent = texto;
+}
+
+function mostrarAviso(texto, tipo = 'info', duracion = 4000) {
+  const aviso = $('aviso');
+  aviso.textContent = texto;
+  aviso.dataset.tipo = tipo;
+  aviso.hidden = false;
+  clearTimeout(estado.temporizadorAviso);
+  if (duracion > 0) {
+    estado.temporizadorAviso = setTimeout(() => {
+      aviso.hidden = true;
+    }, duracion);
+  }
+}
+
+function actualizarBotonLlave() {
+  $('btn-llave').classList.toggle('con-llave', Boolean(leerLlave()));
+}
+
+/* ---------- Renderizado por vista (solo la pestana activa) ---------- */
+
+function renderContadores() {
+  if (!estado.datos) return;
+  const { clips, lotes, incidencias } = estado.datos;
+  $('n-clips').textContent = String(clips.length);
+  $('n-lotes').textContent = String(lotes.length);
+  $('n-incidencias').textContent = String(incidencias.filter((i) => !i.resuelta).length);
+}
+
+function renderResumen() {
+  const { resumen, clips } = estado.datos;
+  $('kpis').innerHTML = V.renderKpis(resumen.kpis);
+  $('trabajos-activos').innerHTML = V.renderTrabajos(resumen.trabajosActivos);
+  $('clips-listos').innerHTML = V.renderClips(
+    clips.filter((c) => c.estado === 'listo').slice(0, 6),
+    'Aun no hay clips listos.'
+  );
+}
+
+function renderClipsVista() {
+  const filtrados = V.filtrarClips(estado.datos.clips, estado.filtroEstado, estado.filtroTexto);
+  $('lista-clips').innerHTML = V.renderClips(filtrados, 'No hay clips que coincidan con el filtro.');
+}
+
+function renderActual() {
+  if (!estado.datos) return;
+  renderContadores();
+  switch (estado.vista) {
+    case 'resumen':
+      renderResumen();
+      break;
+    case 'conexiones':
+      $('lista-conexiones').innerHTML = V.renderConexiones(estado.datos.conexiones);
+      break;
+    case 'clips':
+      renderClipsVista();
+      break;
+    case 'lotes':
+      $('lista-lotes').innerHTML = V.renderLotes(estado.datos.lotes);
+      break;
+    case 'incidencias':
+      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas);
+      break;
+    case 'marketing':
+      $('marketing').innerHTML = V.renderMarketing(estado.datos.clips);
+      break;
+    default:
+      break;
+  }
+}
+
+/* ---------- Pestanas ---------- */
+
+function activarVista(nombre, renderizar = true) {
+  estado.vista = nombre;
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.setAttribute('aria-selected', String(tab.dataset.vista === nombre));
   });
-  variantesPorLote.forEach((v) => v.sort((a, b) => a.marca_tiempo - b.marca_tiempo));
-  return { lotePorId, variantesPorLote, abiertos: state.abiertos, onReintentar: reintentar, onToggleLote: alternarLote };
-}
-
-function render() {
-  if (!state.data) return;
-  const ctx = contexto();
-  renderResumen(roots.resumen, state.data, ctx);
-  renderClips(roots.clips, roots.clipsTotal, state.data, ctx, state.filtro);
-  renderLotes(roots.lotes, state.data, ctx);
-  renderIncidencias(roots.inc, state.data, ctx);
-
-  const inc = incidenciasDe(state.data).length;
-  document.querySelector('[data-count="clips"]').textContent = state.data.clips.length;
-  document.querySelector('[data-count="lotes"]').textContent = state.data.trabajos.length;
-  const cInc = document.querySelector('[data-count="incidencias"]');
-  cInc.textContent = inc;
-  cInc.classList.toggle('hay', inc > 0);
-}
-
-function conexion(ok, detalle) {
-  $('#sync-dot').className = `dot ${ok ? 'ok' : 'bad'}`;
-  $('#sync-texto').textContent = ok
-    ? `Sincronizado ${new Date().toLocaleTimeString('es-DO')}`
-    : `Sin sincronizar: ${detalle}`;
-}
-
-function pedirLlave(mensaje) {
-  $('#llave-msg').textContent = mensaje || 'Introduce la llave para acceder a la API.';
-  $('#input-llave').value = '';
-  const dlg = $('#dlg-llave');
-  if (!dlg.open) dlg.showModal();
-}
-
-async function tick() {
-  if (state.enVuelo || state.pausado || document.hidden) return;
-  state.enVuelo = true;
+  document.querySelectorAll('.vista').forEach((seccion) => {
+    seccion.hidden = seccion.dataset.vista !== nombre;
+  });
   try {
-    state.data = await api.estado();
-    conexion(true);
-    render();
-  } catch (e) {
-    if (e.status === 401) {
-      state.pausado = true;
-      conexion(false, 'llave requerida');
-      pedirLlave(getLlave() ? 'La llave es incorrecta. Inténtalo de nuevo.' : 'Este panel requiere llave maestra.');
-    } else {
-      conexion(false, e.message);
+    history.replaceState(null, '', '#' + nombre);
+  } catch {
+    // Sin historial disponible: se ignora.
+  }
+  if (renderizar) renderActual();
+}
+
+/* ---------- Sondeo en tiempo real ---------- */
+
+function programar() {
+  clearTimeout(estado.temporizador);
+  if (document.hidden || estado.pausado) return;
+  const espera = Math.min(INTERVALO_MS * 2 ** Math.min(estado.errores, 3), INTERVALO_MAX_MS);
+  estado.temporizador = setTimeout(sondear, espera);
+}
+
+function sondearYa() {
+  clearTimeout(estado.temporizador);
+  if (!estado.enVuelo) sondear();
+}
+
+function manejarError(error) {
+  if (error.status === 401) {
+    estado.pausado = true;
+    setSync('error', 'Llave requerida o invalida');
+    mostrarAviso('El servidor rechazo la llave maestra. Configurala con el boton Llave.', 'error', 0);
+    abrirLlave();
+    return;
+  }
+  if (error.status === 503) {
+    estado.pausado = true;
+    setSync('error', 'Servidor sin MASTER_KEY');
+    mostrarAviso(error.message, 'error', 0);
+    return;
+  }
+  setSync('error', 'Sin sincronizar: ' + error.message);
+}
+
+async function sondear() {
+  if (estado.enVuelo) return;
+  estado.enVuelo = true;
+  estado.controlador = new AbortController();
+
+  try {
+    const datos = await obtenerEstado(estado.controlador.signal);
+    estado.errores = 0;
+    estado.datos = datos;
+
+    const firma = JSON.stringify([datos.resumen, datos.conexiones, datos.lotes, datos.incidencias, datos.clips]);
+    if (firma !== estado.firma) {
+      estado.firma = firma;
+      renderActual();
+    }
+
+    if ($('aviso').dataset.tipo === 'error') $('aviso').hidden = true;
+    setSync('ok', 'Sincronizado - ' + new Date().toLocaleTimeString('es-DO'));
+  } catch (error) {
+    if (!error.cancelado) {
+      estado.errores += 1;
+      manejarError(error);
     }
   } finally {
-    state.enVuelo = false;
+    estado.enVuelo = false;
+    estado.controlador = null;
+    programar();
   }
 }
 
-async function reintentar(id, boton) {
-  if (boton) boton.disabled = true;
+/* ---------- Llave maestra ---------- */
+
+function abrirLlave() {
+  const dialogo = $('dlg-llave');
+  if (dialogo.open) return;
+  $('input-llave').value = leerLlave();
+  dialogo.showModal();
+  $('input-llave').focus();
+}
+
+function reanudarSondeo() {
+  estado.pausado = false;
+  estado.errores = 0;
+  setSync('pendiente', 'Conectando...');
+  sondearYa();
+}
+
+function iniciarLlave() {
+  $('btn-llave').addEventListener('click', abrirLlave);
+
+  $('form-llave').addEventListener('submit', (evento) => {
+    evento.preventDefault();
+    guardarLlave($('input-llave').value.trim());
+    actualizarBotonLlave();
+    $('dlg-llave').close();
+    mostrarAviso('Llave guardada en este navegador.', 'ok');
+    reanudarSondeo();
+  });
+
+  $('llave-borrar').addEventListener('click', () => {
+    guardarLlave('');
+    $('input-llave').value = '';
+    actualizarBotonLlave();
+    $('dlg-llave').close();
+    mostrarAviso('Llave eliminada de este navegador.', 'info');
+    reanudarSondeo();
+  });
+
+  $('llave-cancelar').addEventListener('click', () => $('dlg-llave').close());
+}
+
+/* ---------- Encolar ---------- */
+
+function iniciarEncolar() {
+  $('form-encolar').addEventListener('submit', async (evento) => {
+    evento.preventDefault();
+    const url = $('input-url').value.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      mostrarAviso('Pega un enlace valido que empiece con https://', 'error');
+      return;
+    }
+
+    const boton = $('btn-encolar');
+    boton.disabled = true;
+    try {
+      await encolarVideo(url);
+      $('input-url').value = '';
+      mostrarAviso('Video encolado correctamente.', 'ok');
+      activarVista('clips', false);
+      sondearYa();
+    } catch (error) {
+      if (error.status === 401) {
+        abrirLlave();
+      }
+      mostrarAviso('No se pudo encolar: ' + error.message, 'error', 6000);
+    } finally {
+      boton.disabled = false;
+    }
+  });
+}
+
+/* ---------- Copiar copy / CTA ---------- */
+
+async function copiarTexto(texto) {
   try {
-    await api.reintentar(id);
-    toast(`Lote #${id} reencolado`, 'ok');
-    tick();
-  } catch (e) {
-    toast(e.message, 'error');
-    if (boton) boton.disabled = false;
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = texto;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    let copiado = false;
+    try {
+      copiado = document.execCommand('copy');
+    } catch {
+      copiado = false;
+    }
+    area.remove();
+    return copiado;
   }
 }
 
-function alternarLote(id) {
-  if (state.abiertos.has(id)) state.abiertos.delete(id);
-  else state.abiertos.add(id);
-  render();
+function iniciarCopiar() {
+  document.addEventListener('click', async (evento) => {
+    const boton = evento.target.closest('[data-copiar]');
+    if (!boton || !estado.datos) return;
+    const clip = estado.datos.clips.find((c) => c.id === boton.dataset.copiar);
+    if (!clip) return;
+    const texto = [clip.copy, clip.cta].filter(Boolean).join('\n\n');
+    const copiado = await copiarTexto(texto);
+    mostrarAviso(copiado ? 'Copy copiado al portapapeles.' : 'No se pudo copiar el texto.', copiado ? 'ok' : 'error');
+  });
 }
 
-function activarTab(nombre) {
-  state.tab = nombre;
-  sessionStorage.setItem('tab', nombre);
-  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('activa', b.dataset.tab === nombre));
-  document.querySelectorAll('.vista').forEach((v) => { v.hidden = v.dataset.vista !== nombre; });
+/* ---------- Filtros ---------- */
+
+function iniciarFiltros() {
+  $('clip-estado').addEventListener('change', (evento) => {
+    estado.filtroEstado = evento.target.value;
+    if (estado.datos) renderClipsVista();
+  });
+
+  $('clip-buscar').addEventListener('input', (evento) => {
+    clearTimeout(estado.temporizadorBusqueda);
+    const valor = evento.target.value;
+    estado.temporizadorBusqueda = setTimeout(() => {
+      estado.filtroTexto = valor;
+      if (estado.datos) renderClipsVista();
+    }, 150);
+  });
+
+  $('inc-ocultar').addEventListener('change', (evento) => {
+    estado.ocultarResueltas = evento.target.checked;
+    if (estado.datos) {
+      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas);
+    }
+  });
 }
 
-document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => activarTab(b.dataset.tab)));
+/* ---------- Arranque ---------- */
 
-$('#f-estado').addEventListener('change', (e) => { state.filtro.estado = e.target.value; render(); });
-$('#f-texto').addEventListener('input', (e) => { state.filtro.q = e.target.value; render(); });
+function iniciar() {
+  const hash = location.hash.slice(1);
+  if (VISTAS.includes(hash)) estado.vista = hash;
 
-$('#form-url').addEventListener('submit', async (ev) => {
-  ev.preventDefault();
-  const input = $('#input-url');
-  const btn = ev.submitter;
-  if (btn) btn.disabled = true;
-  try {
-    const r = await api.encolar(input.value.trim());
-    input.value = '';
-    toast(`Lote #${r.id} encolado`, 'ok');
-    tick();
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-});
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => activarVista(tab.dataset.vista));
+  });
+  activarVista(estado.vista, false);
 
-$('#btn-llave').addEventListener('click', () => pedirLlave('Actualiza la llave maestra.'));
-$('#llave-cancelar').addEventListener('click', () => $('#dlg-llave').close());
-$('#form-llave').addEventListener('submit', (ev) => {
-  ev.preventDefault();
-  setLlave($('#input-llave').value);
-  $('#dlg-llave').close();
-  state.pausado = false;
-  tick();
-});
+  $('btn-refrescar').addEventListener('click', () => {
+    setSync('pendiente', 'Actualizando...');
+    estado.pausado = false;
+    sondearYa();
+  });
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+  iniciarLlave();
+  iniciarEncolar();
+  iniciarCopiar();
+  iniciarFiltros();
+  actualizarBotonLlave();
 
-activarTab(state.tab);
-tick();
-setInterval(tick, POLL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearTimeout(estado.temporizador);
+      if (estado.controlador) estado.controlador.abort();
+    } else if (!estado.pausado) {
+      sondearYa();
+    }
+  });
+
+  window.addEventListener('online', () => {
+    if (!estado.pausado) sondearYa();
+  });
+
+  sondear();
+}
+
+iniciar();

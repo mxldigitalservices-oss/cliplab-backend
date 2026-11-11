@@ -14,4 +14,5 @@ export const config = Object.freeze({
   corsOrigin: process.env.CORS_ORIGIN || '*',
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
   tmpDir: process.env.TMP_DIR || path.join(os.tmpdir(), 'cliplab'),
+  masterKey: process.env.MASTER_KEY || '',
 });

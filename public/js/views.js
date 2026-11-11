@@ -1,169 +1,244 @@
-import { api } from './api.js';
-import { el, badge, chips, fmtTiempo, hace } from './ui.js';
+const ETIQUETAS_CLIP = {
+  procesando: { texto: 'Procesando', clase: 'info' },
+  listo: { texto: 'Listo', clase: 'ok' },
+  publicado: { texto: 'Publicado', clase: 'ok' },
+  error: { texto: 'Con error', clase: 'err' },
+};
 
-const vacio = (msg) => el('div', { class: 'vacio', text: msg });
+const ETIQUETAS_CONEXION = {
+  activa: { texto: 'Sesion activa', clase: 'ok' },
+  expirada: { texto: 'Sesion expirada', clase: 'warn' },
+  sin_sesion: { texto: 'Sin sesion', clase: 'neutro' },
+};
 
-function tarjetaClip(c, lotePorId) {
-  const lote = lotePorId.get(c.trabajo_id);
-  return el('article', { class: `card clip ${c.estado}` },
-    el('div', { class: 'card-head' }, badge(c.estado), el('span', { class: 'muted meta', text: `Clip #${c.id} · ${hace(c.created_at)}` })),
-    el('h3', { class: 'card-title', text: c.titulo }),
-    el('div', { class: 'muted meta', text:
-      `⏱ ${fmtTiempo(c.marca_tiempo)} – ${fmtTiempo(c.marca_fin)} (${fmtTiempo(c.marca_fin - c.marca_tiempo)}) · Lote #${c.trabajo_id}` +
-      (lote && lote.video_titulo ? ` · ${lote.video_titulo}` : '') }),
-    c.resumen && el('p', { class: 'resumen', text: c.resumen }),
-    c.error && el('p', { class: 'error-text', text: c.error }),
-    c.estado === 'procesando' && el('div', { class: 'bar' }, el('span')),
-    c.estado === 'completado' && el('div', { class: 'acciones' },
-      el('a', { class: 'btn small primary', href: api.urlDescarga(c.id), text: '⬇ Descargar' }))
-  );
+const NOMBRES_PLATAFORMA = {
+  tiktok: 'TikTok',
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+};
+
+const ETIQUETAS_LOTE = {
+  activo: { texto: 'Activo', clase: 'info' },
+  completado: { texto: 'Completado', clase: 'ok' },
+  pausado: { texto: 'Pausado', clase: 'warn' },
+  error: { texto: 'Con error', clase: 'err' },
+};
+
+const ETIQUETAS_NIVEL = {
+  error: { texto: 'Error', clase: 'err' },
+  warn: { texto: 'Alerta', clase: 'warn' },
+  info: { texto: 'Info', clase: 'info' },
+};
+
+export function esc(valor) {
+  return String(valor ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[c]);
 }
 
-function filaTrabajo(t, ctx, { compacta = false } = {}) {
-  return el('article', { class: `card ${t.estado}` },
-    el('div', { class: 'card-head' }, badge(t.estado), el('span', { class: 'muted meta', text: `Lote #${t.id} · ${hace(t.updated_at)}` })),
-    el('h3', { class: 'card-title', text: t.video_titulo || t.url }),
-    !compacta && el('div', { class: 'muted meta' }, el('a', { href: t.url, target: '_blank', rel: 'noopener noreferrer', text: t.url })),
-    t.estado === 'procesando' && el('div', { class: 'bar' }, el('span')),
-    t.error && el('p', { class: t.estado === 'error' ? 'error-text' : 'warn-text', text: t.error }),
-    t.estado === 'error' && botonReintentar(t.id, ctx)
-  );
+export function formatoFecha(iso) {
+  if (!iso) return '-';
+  const fecha = new Date(iso);
+  if (Number.isNaN(fecha.getTime())) return '-';
+  return fecha.toLocaleString('es-DO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-function botonReintentar(id, ctx) {
-  return el('div', { class: 'acciones' },
-    el('button', {
-      class: 'btn small primary', type: 'button', text: '↻ Reintentar',
-      onclick: (ev) => ctx.onReintentar(id, ev.currentTarget),
-    }));
+export function formatoDuracion(segundos) {
+  const total = Number(segundos);
+  if (!Number.isFinite(total) || total <= 0) return '-';
+  const minutos = Math.floor(total / 60);
+  const resto = Math.round(total % 60);
+  return minutos + ':' + String(resto).padStart(2, '0');
 }
 
-export function renderResumen(roots, data, ctx) {
-  const c = data.conteo || {};
-  const kpis = [
-    ['pendiente', 'Pendientes'], ['procesando', 'Procesando'], ['completado', 'Completados'], ['error', 'Errores'],
+function urlSegura(url) {
+  return typeof url === 'string' && /^(https?:\/\/|\/(?!\/))/i.test(url) ? url : '';
+}
+
+function porcentaje(valor) {
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return 0;
+  return Math.max(0, Math.min(100, Math.round(numero)));
+}
+
+function badge(etiqueta) {
+  return '<span class="badge badge-' + esc(etiqueta.clase) + '">' + esc(etiqueta.texto) + '</span>';
+}
+
+function barraProgreso(valor) {
+  return '<div class="progreso" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
+    porcentaje(valor) + '"><span style="width:' + porcentaje(valor) + '%"></span></div>';
+}
+
+function vacio(mensaje) {
+  return '<div class="vacio">' + esc(mensaje) + '</div>';
+}
+
+export function filtrarClips(clips, estado, texto) {
+  const consulta = String(texto || '').trim().toLowerCase();
+  return clips.filter((clip) => {
+    if (estado !== 'todos' && clip.estado !== estado) return false;
+    if (!consulta) return true;
+    const contenido = [clip.titulo, clip.transcripcion, clip.copy, clip.cta].join(' ').toLowerCase();
+    return contenido.includes(consulta);
+  });
+}
+
+export function renderKpis(kpis) {
+  const k = kpis || {};
+  const items = [
+    ['Clips listos', k.clipsListos, 'ok'],
+    ['En proceso', k.enProceso, 'info'],
+    ['Lotes activos', k.lotesActivos, 'acento'],
+    ['Incidencias abiertas', k.incidenciasAbiertas, k.incidenciasAbiertas > 0 ? 'err' : 'neutro'],
+    ['Publicados hoy', k.publicadosHoy, 'ok'],
   ];
-  roots.kpis.innerHTML = '';
-  kpis.forEach(([k, label]) => roots.kpis.append(
-    el('div', { class: `kpi ${k}` }, el('b', { text: c[k] || 0 }), el('span', { text: label }))
-  ));
-  roots.kpis.append(el('div', { class: 'kpi completado' },
-    el('b', { text: data.clips.filter((x) => x.estado === 'completado').length }), el('span', { text: 'Clips listos' })));
-
-  roots.activos.innerHTML = '';
-  const activosT = data.trabajos.filter((t) => t.estado === 'procesando' || t.estado === 'pendiente');
-  const activosC = data.clips.filter((x) => x.estado === 'procesando');
-  activosT.forEach((t) => roots.activos.append(filaTrabajo(t, ctx, { compacta: true })));
-  activosC.forEach((x) => roots.activos.append(tarjetaClip(x, ctx.lotePorId)));
-  if (!activosT.length && !activosC.length) roots.activos.append(vacio('No hay slots activos en este momento.'));
-
-  roots.listos.innerHTML = '';
-  const listos = data.clips.filter((x) => x.estado === 'completado').slice(0, 4);
-  listos.forEach((x) => roots.listos.append(tarjetaClip(x, ctx.lotePorId)));
-  if (!listos.length) roots.listos.append(vacio('Aún no hay clips exportados.'));
-
-  roots.recientes.innerHTML = '';
-  data.trabajos.slice(0, 6).forEach((t) => roots.recientes.append(filaTrabajo(t, ctx, { compacta: true })));
-  if (!data.trabajos.length) roots.recientes.append(vacio('Sin trabajos. Encola un enlace para empezar.'));
+  return items.map(([titulo, valor, clase]) =>
+    '<div class="kpi kpi-' + clase + '"><span class="kpi-valor">' + esc(valor ?? 0) +
+    '</span><span class="kpi-titulo">' + esc(titulo) + '</span></div>'
+  ).join('');
 }
 
-export function renderClips(root, totalEl, data, ctx, filtro) {
-  const q = filtro.q.trim().toLowerCase();
-  const lista = data.clips.filter((c) =>
-    (filtro.estado === 'todos' || c.estado === filtro.estado) &&
-    (!q || `${c.titulo} ${c.resumen || ''}`.toLowerCase().includes(q))
-  );
-  root.innerHTML = '';
-  lista.forEach((c) => root.append(tarjetaClip(c, ctx.lotePorId)));
-  if (!lista.length) root.append(vacio('No hay clips que coincidan con el filtro.'));
-  totalEl.textContent = `${lista.length} de ${data.clips.length}`;
+export function renderTrabajos(trabajos) {
+  if (!trabajos || trabajos.length === 0) {
+    return vacio('No hay trabajos activos en este momento.');
+  }
+  return trabajos.map((t) =>
+    '<div class="fila">' +
+      '<div class="fila-cab"><span class="fila-titulo">' + esc(t.titulo) + '</span>' +
+      badge({ texto: t.etapa || 'En proceso', clase: 'info' }) + '</div>' +
+      barraProgreso(t.progreso) +
+      '<div class="meta"><span>' + porcentaje(t.progreso) + '%</span><span>Actualizado ' + esc(formatoFecha(t.actualizadoEn)) + '</span></div>' +
+    '</div>'
+  ).join('');
 }
 
-export function renderLotes(root, data, ctx) {
-  root.innerHTML = '';
-  data.trabajos.forEach((t) => {
-    const variantes = ctx.variantesPorLote.get(t.id) || [];
-    const listas = variantes.filter((v) => v.estado === 'completado').length;
-    const abierto = ctx.abiertos.has(t.id);
+export function renderClips(clips, mensajeVacio) {
+  if (!clips || clips.length === 0) {
+    return vacio(mensajeVacio || 'No hay clips para mostrar.');
+  }
+  return clips.map((clip) => {
+    const etiqueta = ETIQUETAS_CLIP[clip.estado] || { texto: clip.estado || 'Desconocido', clase: 'neutro' };
+    const video = urlSegura(clip.url);
+    const fuente = urlSegura(clip.fuente);
+    const plataformas = (clip.plataformas || []).map((p) => NOMBRES_PLATAFORMA[p] || p).join(', ');
+    const tieneTexto = Boolean(clip.copy || clip.cta);
 
-    const card = el('article', { class: `card ${t.estado}` },
-      el('div', { class: 'card-head' }, badge(t.estado), el('span', { class: 'muted meta', text: `Lote #${t.id} · intentos ${t.intentos} · ${hace(t.updated_at)}` })),
-      el('h3', { class: 'card-title', text: t.video_titulo || t.url }),
-      el('div', { class: 'muted meta' }, el('a', { href: t.url, target: '_blank', rel: 'noopener noreferrer', text: t.url })),
-      chips(t.palabras_clave),
-      t.resumen && el('p', { class: 'resumen', text: t.resumen }),
-      variantes.length
-        ? el('div', { class: `bar fijo` }, el('span', { style: `width:${Math.round((listas / variantes.length) * 100)}%` }))
-        : null,
-      el('div', { class: 'muted meta', text: variantes.length ? `${listas}/${variantes.length} variantes listas` : 'Sin variantes aún' }),
-      t.error && el('p', { class: t.estado === 'error' ? 'error-text' : 'warn-text', text: t.error }),
-      el('div', { class: 'acciones' },
-        variantes.length && el('button', {
-          class: 'btn small ghost', type: 'button',
-          text: abierto ? '▾ Ocultar variantes' : '▸ Ver variantes',
-          onclick: () => ctx.onToggleLote(t.id),
-        }),
-        t.estado === 'error' && el('button', {
-          class: 'btn small primary', type: 'button', text: '↻ Reintentar',
-          onclick: (ev) => ctx.onReintentar(t.id, ev.currentTarget),
-        })
-      )
-    );
+    return '<article class="card" data-id="' + esc(clip.id) + '">' +
+      '<div class="card-cab"><h3>' + esc(clip.titulo) + '</h3>' + badge(etiqueta) + '</div>' +
+      '<div class="meta"><span>Duracion: ' + esc(formatoDuracion(clip.duracion)) + '</span>' +
+        '<span>Creado: ' + esc(formatoFecha(clip.creadoEn)) + '</span>' +
+        (plataformas ? '<span>Publicado en: ' + esc(plataformas) + '</span>' : '') + '</div>' +
+      (clip.estado === 'procesando'
+        ? barraProgreso(clip.progreso) + '<div class="meta"><span>' + esc(clip.etapa || 'En proceso') + ' - ' + porcentaje(clip.progreso) + '%</span></div>'
+        : '') +
+      (clip.copy ? '<div class="copy"><strong>Copy</strong><p>' + esc(clip.copy) + '</p></div>' : '') +
+      (clip.cta ? '<div class="copy"><strong>CTA</strong><p>' + esc(clip.cta) + '</p></div>' : '') +
+      (fuente && fuente !== clip.titulo ? '<div class="fuente">Fuente: <a href="' + esc(fuente) + '" target="_blank" rel="noopener noreferrer">' + esc(fuente) + '</a></div>' : '') +
+      '<div class="card-acciones">' +
+        (video ? '<a class="btn" href="' + esc(video) + '" target="_blank" rel="noopener noreferrer">Ver video</a>' : '') +
+        (tieneTexto ? '<button class="btn" type="button" data-copiar="' + esc(clip.id) + '">Copiar copy</button>' : '') +
+      '</div>' +
+    '</article>';
+  }).join('');
+}
 
-    if (abierto && variantes.length) {
-      card.append(el('div', { class: 'variantes' }, variantes.map((v) =>
-        el('div', { class: 'variante' },
-          el('div', { class: 'card-head' }, badge(v.estado), el('span', { class: 'muted meta', text: `${fmtTiempo(v.marca_tiempo)} – ${fmtTiempo(v.marca_fin)}` })),
-          el('strong', { text: v.titulo }),
-          v.resumen && el('p', { class: 'resumen', text: v.resumen }),
-          v.error && el('p', { class: 'error-text', text: v.error }),
-          v.estado === 'completado' && el('div', { class: 'acciones' },
-            el('a', { class: 'btn small primary', href: api.urlDescarga(v.id), text: '⬇ Descargar' }))
-        )
-      )));
+export function renderConexiones(conexiones) {
+  if (!conexiones || conexiones.length === 0) {
+    return vacio('No hay cuentas vinculadas todavia.');
+  }
+  return conexiones.map((c) => {
+    const etiqueta = ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
+    return '<article class="card">' +
+      '<div class="card-cab"><h3>' + esc(NOMBRES_PLATAFORMA[c.plataforma] || c.plataforma) + '</h3>' + badge(etiqueta) + '</div>' +
+      '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || 'sin vincular') + '</span>' +
+      '<span>Ultima verificacion: ' + esc(formatoFecha(c.ultimaVerificacion)) + '</span></div>' +
+    '</article>';
+  }).join('');
+}
+
+export function renderLotes(lotes) {
+  if (!lotes || lotes.length === 0) {
+    return vacio('No hay lotes de produccion todavia.');
+  }
+  return lotes.map((l) => {
+    const etiqueta = ETIQUETAS_LOTE[l.estado] || { texto: l.estado || 'Desconocido', clase: 'neutro' };
+    const total = Number(l.total) || 0;
+    const completados = Number(l.completados) || 0;
+    const avance = total > 0 ? (completados / total) * 100 : 0;
+    return '<article class="card">' +
+      '<div class="card-cab"><h3>' + esc(l.nombre || l.id) + '</h3>' + badge(etiqueta) + '</div>' +
+      barraProgreso(avance) +
+      '<div class="meta"><span>' + completados + ' de ' + total + ' completados</span>' +
+      '<span>Fallidos: ' + esc(l.fallidos ?? 0) + '</span>' +
+      '<span>Creado: ' + esc(formatoFecha(l.creadoEn)) + '</span></div>' +
+    '</article>';
+  }).join('');
+}
+
+export function renderIncidencias(incidencias, ocultarResueltas) {
+  const visibles = (incidencias || []).filter((i) => !(ocultarResueltas && i.resuelta));
+  if (visibles.length === 0) {
+    return vacio('Sin incidencias registradas.');
+  }
+  return visibles.map((i) => {
+    const etiqueta = ETIQUETAS_NIVEL[i.nivel] || ETIQUETAS_NIVEL.info;
+    return '<div class="fila nivel-' + esc(i.nivel in ETIQUETAS_NIVEL ? i.nivel : 'info') + (i.resuelta ? ' resuelta' : '') + '">' +
+      '<div class="fila-cab"><span class="fila-titulo">' + esc(i.mensaje) + '</span>' + badge(etiqueta) + '</div>' +
+      '<div class="meta"><span>Origen: ' + esc(i.origen || 'sistema') + '</span>' +
+      '<span>' + esc(formatoFecha(i.creadoEn)) + '</span>' +
+      '<span>' + (i.resuelta ? 'Resuelta' : 'Abierta') + '</span></div>' +
+    '</div>';
+  }).join('');
+}
+
+export function renderMarketing(clips) {
+  const lista = clips || [];
+  const total = lista.length;
+  const conCopy = lista.filter((c) => c.copy).length;
+  const conCta = lista.filter((c) => c.cta).length;
+  const publicados = lista.filter((c) => c.estado === 'publicado').length;
+
+  const porPlataforma = {};
+  for (const clip of lista) {
+    for (const plataforma of clip.plataformas || []) {
+      porPlataforma[plataforma] = (porPlataforma[plataforma] || 0) + 1;
     }
-    root.append(card);
-  });
-  if (!data.trabajos.length) root.append(vacio('Sin lotes todavía.'));
-}
+  }
+  const maximo = Math.max(1, ...Object.values(porPlataforma));
 
-export function incidenciasDe(data) {
-  const lotePorId = new Map(data.trabajos.map((t) => [t.id, t]));
-  const items = [];
-  data.trabajos.forEach((t) => {
-    if (t.estado === 'error') items.push({ tipo: 'error', fecha: t.updated_at, trabajo: t });
-    else if (t.error) items.push({ tipo: 'advertencia', fecha: t.updated_at, trabajo: t });
-  });
-  data.clips.forEach((c) => {
-    if (c.estado !== 'error') return;
-    const padre = lotePorId.get(c.trabajo_id);
-    if (padre && padre.estado === 'error') return;
-    items.push({ tipo: 'error', fecha: c.created_at, clip: c });
-  });
-  return items.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-}
+  const kpis = renderKpis({}).length ? '' : '';
+  void kpis;
 
-export function renderIncidencias(root, data, ctx) {
-  root.innerHTML = '';
-  const items = incidenciasDe(data);
-  items.forEach((i) => {
-    if (i.trabajo) {
-      const t = i.trabajo;
-      root.append(el('article', { class: `card ${i.tipo === 'error' ? 'error' : ''}` },
-        el('div', { class: 'card-head' }, badge(i.tipo === 'error' ? 'error' : 'advertencia'), el('span', { class: 'muted meta', text: `Lote #${t.id} · ${hace(t.updated_at)}` })),
-        el('h3', { class: 'card-title', text: t.video_titulo || t.url }),
-        el('p', { class: i.tipo === 'error' ? 'error-text' : 'warn-text', text: t.error || 'Sin detalle' }),
-        i.tipo === 'error' && el('div', { class: 'acciones' },
-          el('button', { class: 'btn small primary', type: 'button', text: '↻ Reintentar', onclick: (ev) => ctx.onReintentar(t.id, ev.currentTarget) }))
-      ));
-    } else {
-      const c = i.clip;
-      root.append(el('article', { class: 'card error' },
-        el('div', { class: 'card-head' }, badge('error'), el('span', { class: 'muted meta', text: `Clip #${c.id} · Lote #${c.trabajo_id} · ${hace(c.created_at)}` })),
-        el('h3', { class: 'card-title', text: c.titulo }),
-        el('p', { class: 'error-text', text: c.error || 'Sin detalle' })
-      ));
-    }
-  });
-  if (!items.length) root.append(vacio('Sin incidencias. Todo en orden ✔'));
+  const resumen = [
+    ['Clips totales', total, 'acento'],
+    ['Con copy', conCopy, 'info'],
+    ['Con CTA', conCta, 'info'],
+    ['Publicados', publicados, 'ok'],
+  ].map(([titulo, valor, clase]) =>
+    '<div class="kpi kpi-' + clase + '"><span class="kpi-valor">' + esc(valor) + '</span><span class="kpi-titulo">' + esc(titulo) + '</span></div>'
+  ).join('');
+
+  const barras = Object.keys(porPlataforma).length === 0
+    ? vacio('Aun no hay publicaciones por plataforma.')
+    : Object.entries(porPlataforma).map(([plataforma, cantidad]) =>
+      '<div class="barra-fila"><span>' + esc(NOMBRES_PLATAFORMA[plataforma] || plataforma) + '</span>' +
+      '<div class="barra"><span style="width:' + Math.round((cantidad / maximo) * 100) + '%"></span></div>' +
+      '<span class="barra-num">' + cantidad + '</span></div>'
+    ).join('');
+
+  const recientes = lista.filter((c) => c.copy).slice(0, 5).map((c) =>
+    '<div class="fila"><div class="fila-titulo">' + esc(c.titulo) + '</div>' +
+    '<div class="copy"><strong>Copy</strong><p>' + esc(c.copy) + '</p></div>' +
+    (c.cta ? '<div class="copy"><strong>CTA</strong><p>' + esc(c.cta) + '</p></div>' : '') + '</div>'
+  ).join('');
+
+  return '<div class="kpis">' + resumen + '</div>' +
+    '<h2 class="titulo-seccion">Publicaciones por plataforma</h2>' + barras +
+    '<h2 class="titulo-seccion">Ultimos textos comerciales</h2>' +
+    '<div class="lista">' + (recientes || vacio('Aun no hay copies generados.')) + '</div>';
 }

@@ -3,85 +3,104 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, noarchive">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0a0d14">
   <title>ClipLab Pro</title>
-  <link rel="stylesheet" href="/css/panel.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236d7bff'/%3E%3Cpath d='M12 9l12 7-12 7z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <span class="logo">▶</span>
-      <div>
-        <h1>ClipLab <em>Pro</em></h1>
-        <div class="sync"><span id="sync-dot" class="dot"></span><span id="sync-texto">Conectando…</span></div>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">&#9654;</div>
+        <div>
+          <h1>ClipLab <span>Pro</span></h1>
+          <p id="sync" class="sync" data-estado="pendiente" role="status">
+            <span class="dot"></span><span id="sync-texto">Conectando...</span>
+          </p>
+        </div>
       </div>
-    </div>
-    <div class="top-actions">
-      <button id="btn-llave" class="btn ghost small" type="button">🔑 Llave</button>
-    </div>
-  </header>
-
-  <form id="form-url" class="encolar" autocomplete="off">
-    <input id="input-url" type="url" inputmode="url" placeholder="Pega el enlace del video (https://…)" required>
-    <button class="btn primary" type="submit">Encolar</button>
-  </form>
-
-  <nav class="tabs" role="tablist">
-    <button class="tab" role="tab" data-tab="resumen">Resumen</button>
-    <button class="tab" role="tab" data-tab="clips">Clips <span class="count" data-count="clips">0</span></button>
-    <button class="tab" role="tab" data-tab="lotes">Lotes / Variantes <span class="count" data-count="lotes">0</span></button>
-    <button class="tab" role="tab" data-tab="incidencias">Incidencias <span class="count alerta" data-count="incidencias">0</span></button>
-  </nav>
-
-  <main>
-    <section class="vista" data-vista="resumen">
-      <div id="r-kpis" class="kpis"></div>
-      <h2>Slots activos</h2>
-      <div id="r-activos" class="lista"></div>
-      <h2>Clips listos recientes</h2>
-      <div id="r-listos" class="grid"></div>
-      <h2>Actividad reciente</h2>
-      <div id="r-recientes" class="lista"></div>
-    </section>
-
-    <section class="vista" data-vista="clips" hidden>
-      <div class="toolbar">
-        <select id="f-estado" aria-label="Filtrar por estado">
-          <option value="todos">Todos los estados</option>
-          <option value="pendiente">Pendientes</option>
-          <option value="procesando">Procesando</option>
-          <option value="completado">Completados</option>
-          <option value="error">Con error</option>
-        </select>
-        <input id="f-texto" type="search" placeholder="Buscar por título o transcripción…">
-        <span id="clips-total" class="muted"></span>
+      <div class="acciones">
+        <button id="btn-refrescar" class="btn btn-icono" type="button" title="Actualizar ahora" aria-label="Actualizar ahora">&#10227;</button>
+        <button id="btn-llave" class="btn" type="button">&#128273; Llave</button>
       </div>
-      <div id="clips-lista" class="grid"></div>
-    </section>
+    </header>
 
-    <section class="vista" data-vista="lotes" hidden>
-      <div id="lotes-lista" class="lista"></div>
-    </section>
+    <form id="form-encolar" class="encolar" autocomplete="off">
+      <input id="input-url" type="url" inputmode="url" placeholder="Pega el enlace del video (https://...)" required>
+      <button id="btn-encolar" class="btn btn-primario" type="submit">Encolar</button>
+    </form>
 
-    <section class="vista" data-vista="incidencias" hidden>
-      <div id="inc-lista" class="lista"></div>
-    </section>
-  </main>
+    <p id="aviso" class="aviso" hidden role="status"></p>
+
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab" role="tab" type="button" data-vista="resumen">Resumen</button>
+      <button class="tab" role="tab" type="button" data-vista="conexiones">Conexiones</button>
+      <button class="tab" role="tab" type="button" data-vista="clips">Clips <span id="n-clips" class="contador">0</span></button>
+      <button class="tab" role="tab" type="button" data-vista="lotes">Lotes / Variantes <span id="n-lotes" class="contador">0</span></button>
+      <button class="tab" role="tab" type="button" data-vista="incidencias">Incidencias <span id="n-incidencias" class="contador">0</span></button>
+      <button class="tab" role="tab" type="button" data-vista="marketing">Marketing y Analiticas</button>
+    </nav>
+
+    <main>
+      <section id="vista-resumen" class="vista" data-vista="resumen" role="tabpanel">
+        <div id="kpis" class="kpis"></div>
+        <h2 class="titulo-seccion">Trabajos activos</h2>
+        <div id="trabajos-activos" class="lista"></div>
+        <h2 class="titulo-seccion">Clips listos</h2>
+        <div id="clips-listos" class="grid"></div>
+      </section>
+
+      <section id="vista-conexiones" class="vista" data-vista="conexiones" role="tabpanel" hidden>
+        <div id="lista-conexiones" class="grid"></div>
+      </section>
+
+      <section id="vista-clips" class="vista" data-vista="clips" role="tabpanel" hidden>
+        <div class="toolbar">
+          <select id="clip-estado" aria-label="Filtrar por estado">
+            <option value="todos">Todos</option>
+            <option value="procesando">Procesando</option>
+            <option value="listo">Listos</option>
+            <option value="publicado">Publicados</option>
+            <option value="error">Con error</option>
+          </select>
+          <input id="clip-buscar" type="search" placeholder="Buscar por titulo o transcripcion..." aria-label="Buscar clips">
+        </div>
+        <div id="lista-clips" class="grid"></div>
+      </section>
+
+      <section id="vista-lotes" class="vista" data-vista="lotes" role="tabpanel" hidden>
+        <div id="lista-lotes" class="grid"></div>
+      </section>
+
+      <section id="vista-incidencias" class="vista" data-vista="incidencias" role="tabpanel" hidden>
+        <div class="toolbar">
+          <label class="check"><input id="inc-ocultar" type="checkbox"> Ocultar resueltas</label>
+        </div>
+        <div id="lista-incidencias" class="lista"></div>
+      </section>
+
+      <section id="vista-marketing" class="vista" data-vista="marketing" role="tabpanel" hidden>
+        <div id="marketing"></div>
+      </section>
+    </main>
+  </div>
 
   <dialog id="dlg-llave">
-    <form method="dialog" id="form-llave">
-      <h3>Llave maestra</h3>
-      <p class="muted" id="llave-msg">Introduce la llave para acceder a la API.</p>
-      <input id="input-llave" type="password" autocomplete="current-password" placeholder="MASTER_KEY">
-      <div class="dlg-actions">
-        <button class="btn ghost" value="cancel" type="button" id="llave-cancelar">Cancelar</button>
-        <button class="btn primary" type="submit">Guardar</button>
+    <form id="form-llave" autocomplete="off">
+      <h2>Llave maestra</h2>
+      <p>Se guarda solo en este navegador y se envia en la cabecera <code>x-master-key</code>.</p>
+      <input id="input-llave" type="password" placeholder="MASTER_KEY" autocomplete="off" spellcheck="false">
+      <div class="dlg-acciones">
+        <button id="llave-borrar" class="btn" type="button">Borrar</button>
+        <button id="llave-cancelar" class="btn" type="button">Cancelar</button>
+        <button class="btn btn-primario" type="submit">Guardar</button>
       </div>
     </form>
   </dialog>
 
-  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <noscript><p class="aviso">ClipLab Pro necesita JavaScript para funcionar.</p></noscript>
   <script type="module" src="/js/panel.js"></script>
 </body>
 </html>
