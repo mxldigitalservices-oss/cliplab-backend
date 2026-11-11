@@ -19,6 +19,7 @@ export function createApp() {
   app.use(cors({ origin: config.corsOrigin }));
   app.use(express.json({ limit: '1mb' }));
 
+  app.use('/clips', express.static(config.clipsDir, { index: false, dotfiles: 'ignore', maxAge: '1d' }));
   app.use(express.static(publicDir, { etag: true }));
   app.use(routes);
 

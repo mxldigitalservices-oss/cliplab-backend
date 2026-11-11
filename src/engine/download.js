@@ -6,6 +6,7 @@ import { parsearUrlYoutube } from '../utils/youtube.js';
 
 const FORMATO = 'bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b';
 const TIMEOUT_MS = 20 * 60 * 1000;
+const PREFIJO_PROGRESO = 'PROGRESO';
 
 function explicarError(error) {
   if (!(error instanceof ComandoError)) return error;
@@ -30,7 +31,6 @@ export async function descargarVideo(url, directorio, opciones = {}) {
   const args = [
     '--no-playlist',
     '--no-warnings',
-    '--no-progress',
     '--no-colors',
     '--restrict-filenames',
     '--js-runtimes', 'node',
@@ -40,6 +40,9 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     '--match-filter', 'duration<=' + config.maxVideoSeconds,
     '-f', FORMATO,
     '--merge-output-format', 'mp4',
+    '--progress',
+    '--newline',
+    '--progress-template', 'download:' + PREFIJO_PROGRESO + ' %(progress._percent_str)s',
     '-o', path.join(directorio, '%(id)s.%(ext)s'),
     '--print', 'after_move:%(id)s|%(duration)s|%(filepath)s|%(title)s',
   ];
@@ -52,17 +55,35 @@ export async function descargarVideo(url, directorio, opciones = {}) {
   }
   args.push('--', parsed.toString());
 
+  let maximo = 0;
+  const alLinea = (linea) => {
+    if (!opciones.onProgreso) return;
+    const coincidencia = new RegExp(PREFIJO_PROGRESO + '\\s+([\\d.]+)%').exec(linea);
+    if (!coincidencia) return;
+    const fraccion = Math.min(1, Number(coincidencia[1]) / 100);
+    if (fraccion > maximo) {
+      maximo = fraccion;
+      opciones.onProgreso(fraccion);
+    }
+  };
+
   let resultado;
   try {
     resultado = await run(config.ytdlpPath, args, {
       timeoutMs: TIMEOUT_MS,
       signal: opciones.signal,
+      onStdoutLine: alLinea,
     });
   } catch (error) {
     throw explicarError(error);
   }
 
-  const linea = resultado.stdout.split('\n').map((l) => l.trim()).filter(Boolean).pop();
+  const linea = resultado.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith(PREFIJO_PROGRESO))
+    .pop();
+
   if (!linea) {
     throw new Error('El video no se descargo: supera la duracion maxima permitida o no esta disponible');
   }

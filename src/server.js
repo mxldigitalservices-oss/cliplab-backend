@@ -1,11 +1,15 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { createApp } from './app.js';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { verificarHerramientas } from './engine/herramientas.js';
+import { detenerCola } from './engine/cola.js';
 
 async function main() {
   await fs.mkdir(config.tmpDir, { recursive: true });
+  await fs.mkdir(config.clipsDir, { recursive: true });
+  await fs.rm(path.join(config.tmpDir, 'jobs'), { recursive: true, force: true });
 
   const herramientas = await verificarHerramientas();
   for (const [nombre, estado] of Object.entries(herramientas)) {
@@ -32,6 +36,7 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info('Senal recibida, cerrando servidor', { signal });
+    detenerCola();
 
     server.close((error) => {
       if (error) {

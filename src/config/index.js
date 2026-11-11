@@ -10,6 +10,8 @@ function toInt(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+const tmpDir = process.env.TMP_DIR || path.join(os.tmpdir(), 'cliplab');
+
 export const config = Object.freeze({
   env: process.env.NODE_ENV || 'development',
   port: toInt(process.env.PORT, 8080),
@@ -17,7 +19,8 @@ export const config = Object.freeze({
   logLevel: process.env.LOG_LEVEL || 'info',
   corsOrigin: process.env.CORS_ORIGIN || '*',
   masterKey: process.env.MASTER_KEY || '',
-  tmpDir: process.env.TMP_DIR || path.join(os.tmpdir(), 'cliplab'),
+  tmpDir,
+  clipsDir: process.env.CLIPS_DIR || path.join(tmpDir, 'clips'),
 
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
   ytdlpPath: process.env.YTDLP_PATH || 'yt-dlp',
@@ -34,4 +37,9 @@ export const config = Object.freeze({
   videoPreset: process.env.VIDEO_PRESET || 'veryfast',
   maxVideoSeconds: toInt(process.env.MAX_VIDEO_SECONDS, 10800),
   maxClipSeconds: toInt(process.env.MAX_CLIP_SECONDS, 90),
+
+  defaultClipSeconds: toInt(process.env.DEFAULT_CLIP_SECONDS, 45),
+  defaultRenderMode: process.env.DEFAULT_RENDER_MODE === 'blur' ? 'blur' : 'recorte',
+  maxQueue: Math.max(1, toInt(process.env.MAX_QUEUE, 20)),
+  maxClipsStored: Math.max(1, toInt(process.env.MAX_CLIPS_STORED, 25)),
 });

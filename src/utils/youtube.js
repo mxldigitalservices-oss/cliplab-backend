@@ -20,3 +20,17 @@ export function parsearUrlYoutube(entrada) {
   }
   return parsed;
 }
+
+function aSegundos(valor) {
+  const texto = String(valor || '').trim().toLowerCase();
+  if (!texto) return 0;
+  if (/^\d+$/.test(texto)) return parseInt(texto, 10);
+
+  const partes = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/.exec(texto);
+  if (!partes) return 0;
+  return Number(partes[1] || 0) * 3600 + Number(partes[2] || 0) * 60 + Number(partes[3] || 0);
+}
+
+export function segundosDesdeUrl(parsed) {
+  return aSegundos(parsed.searchParams.get('t') || parsed.searchParams.get('start'));
+}

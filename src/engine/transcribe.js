@@ -45,7 +45,7 @@ export function parsearPalabras(json) {
 }
 
 export async function transcribirAudio(video, directorio, opciones = {}) {
-  const { inicio = 0, duracion = 0, idioma = config.whisperLang, signal } = opciones;
+  const { inicio = 0, duracion = 0, idioma = config.whisperLang, signal, onProgreso } = opciones;
 
   await fs.mkdir(directorio, { recursive: true });
   const wav = path.join(directorio, 'audio.wav');
@@ -60,6 +60,14 @@ export async function transcribirAudio(video, directorio, opciones = {}) {
     argsAudio.push('-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', wav);
     await run(config.ffmpegPath, argsAudio, { timeoutMs: 5 * 60 * 1000, signal });
 
+    const alLineaError = (linea) => {
+      if (!onProgreso) return;
+      const coincidencia = /progress\s*=\s*(\d+)%/.exec(linea);
+      if (coincidencia) {
+        onProgreso(Math.min(1, Number(coincidencia[1]) / 100));
+      }
+    };
+
     await run(config.whisperPath, [
       '-m', config.whisperModel,
       '-f', wav,
@@ -70,8 +78,9 @@ export async function transcribirAudio(video, directorio, opciones = {}) {
       '-sow',
       '-oj',
       '-np',
+      '-pp',
       '-of', base,
-    ], { timeoutMs: 20 * 60 * 1000, signal });
+    ], { timeoutMs: 20 * 60 * 1000, signal, onStderrLine: alLineaError });
 
     const json = JSON.parse(await fs.readFile(rutaJson, 'utf8'));
     return parsearPalabras(json);
