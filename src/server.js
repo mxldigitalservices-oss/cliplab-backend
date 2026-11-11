@@ -1,52 +1,65 @@
-const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const cfg = require('./config');
-const db = require('./db');
-const queue = require('./queue');
-const routes = require('./routes');
-
-process.on('unhandledRejection', (e) => console.error('[proceso] unhandledRejection:', e));
-process.on('uncaughtException', (e) => console.error('[proceso] uncaughtException:', e));
-
-const app = express();
-app.disable('x-powered-by');
-app.use((_req, res, next) => {
-  res.set('X-Robots-Tag', 'noindex, noarchive');
-  res.set('X-Content-Type-Options', 'nosniff');
-  next();
-});
-app.use(express.json({ limit: '100kb' }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
-app.use('/api', routes);
-
-app.use('/api', (_req, res) => res.status(404).json({ error: 'No encontrado' }));
-app.use((err, _req, res, _next) => {
-  console.error('[http]', err);
-  res.status(500).json({ error: 'Error interno del servidor' });
-});
+import fs from 'node:fs/promises';
+import { createApp } from './app.js';
+import { config } from './config/index.js';
+import { logger } from './utils/logger.js';
+import { checkFfmpeg } from './engine/ffmpegCheck.js';
 
 async function main() {
-  fs.mkdirSync(cfg.tmpDir, { recursive: true });
-  fs.mkdirSync(cfg.exportDir, { recursive: true });
-  await db.migrate();
-  await queue.recuperarHuerfanos(true);
-  queue.iniciar();
+  await fs.mkdir(config.tmpDir, { recursive: true });
 
-  const server = app.listen(cfg.port, '0.0.0.0', () => console.log(`[http] escuchando en :${cfg.port}`));
+  const ffmpeg = await checkFfmpeg();
+  if (ffmpeg.available) {
+    logger.info('FFmpeg detectado', { version: ffmpeg.version });
+  } else {
+    logger.warn('FFmpeg no disponible', { error: ffmpeg.error });
+  }
 
-  const apagar = async (sig) => {
-    console.log(`[proceso] ${sig} recibido, cerrando...`);
-    server.close();
-    await queue.detener();
-    await db.close().catch(() => {});
-    process.exit(0);
-  };
-  process.on('SIGTERM', () => apagar('SIGTERM'));
-  process.on('SIGINT', () => apagar('SIGINT'));
+  const app = createApp();
+
+  const server = app.listen(config.port, config.host, () => {
+    logger.info('ClipLab Pro escuchando', {
+      host: config.host,
+      port: config.port,
+      env: config.env,
+    });
+  });
+
+  let shuttingDown = false;
+
+  function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info('Senal recibida, cerrando servidor', { signal });
+
+    server.close((error) => {
+      if (error) {
+        logger.error('Error cerrando servidor', error);
+        process.exit(1);
+      }
+      logger.info('Servidor cerrado correctamente');
+      process.exit(0);
+    });
+
+    setTimeout(() => {
+      logger.error('Cierre forzado por timeout');
+      process.exit(1);
+    }, 10000).unref();
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
+  process.on('unhandledRejection', (reason) => {
+    logger.error('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason)));
+  });
+
+  process.on('uncaughtException', (error) => {
+    logger.error('uncaughtException', error);
+    shutdown('uncaughtException');
+  });
 }
 
-main().catch((e) => {
-  console.error('[arranque] fallo fatal:', e);
+main().catch((error) => {
+  logger.error('Fallo fatal al iniciar', error);
   process.exit(1);
 });

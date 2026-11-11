@@ -1,3 +1,10 @@
-node_modules
-data
+node_modules/
+npm-debug.log*
 .env
+.env.*
+!.env.example
+tmp/
+*.log
+.DS_Store
+cookies/
+*.cookies.json
