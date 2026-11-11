@@ -1,9 +1,20 @@
 const CLAVE_STORAGE = 'cliplab.masterKey';
 const TIMEOUT_MS = 8000;
+const INVISIBLES = /[\u200B-\u200D\u2060\uFEFF]/g;
+const CABECERA_VALIDA = /^[\x20-\x7E]+$/;
+
+function limpiarLlave(valor) {
+  let limpio = String(valor || '').replace(INVISIBLES, '').trim();
+  const comilla = limpio.charAt(0);
+  if (limpio.length >= 2 && (comilla === '"' || comilla === "'") && limpio.endsWith(comilla)) {
+    limpio = limpio.slice(1, -1).trim();
+  }
+  return limpio;
+}
 
 export function leerLlave() {
   try {
-    return localStorage.getItem(CLAVE_STORAGE) || '';
+    return limpiarLlave(localStorage.getItem(CLAVE_STORAGE));
   } catch {
     return '';
   }
@@ -11,8 +22,9 @@ export function leerLlave() {
 
 export function guardarLlave(valor) {
   try {
-    if (valor) {
-      localStorage.setItem(CLAVE_STORAGE, valor);
+    const limpia = limpiarLlave(valor);
+    if (limpia) {
+      localStorage.setItem(CLAVE_STORAGE, limpia);
     } else {
       localStorage.removeItem(CLAVE_STORAGE);
     }
@@ -34,6 +46,18 @@ export class ApiError extends Error {
 async function solicitar(ruta, opciones = {}) {
   const { metodo = 'GET', cuerpo, signal } = opciones;
 
+  const cabeceras = { Accept: 'application/json' };
+  const llave = leerLlave();
+  if (llave) {
+    if (!CABECERA_VALIDA.test(llave)) {
+      throw new ApiError('La llave guardada tiene caracteres no validos (acentos o comillas curvas). Borrala y pega la correcta.', 401);
+    }
+    cabeceras['x-master-key'] = llave;
+  }
+  if (cuerpo !== undefined) {
+    cabeceras['Content-Type'] = 'application/json';
+  }
+
   const controlador = new AbortController();
   let vencido = false;
   const temporizador = setTimeout(() => {
@@ -49,15 +73,6 @@ async function solicitar(ruta, opciones = {}) {
     signal.addEventListener('abort', () => controlador.abort(), { once: true });
   }
 
-  const cabeceras = { Accept: 'application/json' };
-  const llave = leerLlave();
-  if (llave) {
-    cabeceras['x-master-key'] = llave;
-  }
-  if (cuerpo !== undefined) {
-    cabeceras['Content-Type'] = 'application/json';
-  }
-
   let respuesta;
   try {
     respuesta = await fetch(ruta, {
@@ -68,7 +83,7 @@ async function solicitar(ruta, opciones = {}) {
       cache: 'no-store',
     });
   } catch {
-    if (signal?.aborted && !vencido) {
+    if (signal && signal.aborted && !vencido) {
       throw new ApiError('Solicitud cancelada', 0, true);
     }
     throw new ApiError(vencido ? 'El servidor no respondio a tiempo' : 'Sin conexion con el servidor', 0);

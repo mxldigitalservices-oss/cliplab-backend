@@ -167,3 +167,5 @@ dialog p { color: var(--suave); margin: 0 0 12px; }
   .grid { grid-template-columns: 1fr; }
   .barra-fila { grid-template-columns: 80px 1fr 32px; }
 }
+
+.secreto { -webkit-text-security: disc; }
