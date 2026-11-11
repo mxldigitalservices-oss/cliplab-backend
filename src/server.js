@@ -2,16 +2,18 @@ import fs from 'node:fs/promises';
 import { createApp } from './app.js';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
-import { checkFfmpeg } from './engine/ffmpegCheck.js';
+import { verificarHerramientas } from './engine/herramientas.js';
 
 async function main() {
   await fs.mkdir(config.tmpDir, { recursive: true });
 
-  const ffmpeg = await checkFfmpeg();
-  if (ffmpeg.available) {
-    logger.info('FFmpeg detectado', { version: ffmpeg.version });
-  } else {
-    logger.warn('FFmpeg no disponible', { error: ffmpeg.error });
+  const herramientas = await verificarHerramientas();
+  for (const [nombre, estado] of Object.entries(herramientas)) {
+    if (estado.available) {
+      logger.info('Herramienta disponible', { nombre, ...estado });
+    } else {
+      logger.warn('Herramienta no disponible', { nombre, error: estado.error });
+    }
   }
 
   const app = createApp();

@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import { requireMasterKey } from '../middleware/auth.js';
 import { store } from '../storage/store.js';
+import { parsearUrlYoutube } from '../utils/youtube.js';
 
 const router = Router();
-
-const HOSTS_YOUTUBE = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'];
 
 router.use(requireMasterKey);
 
@@ -14,21 +13,10 @@ router.get('/estado', (req, res) => {
 });
 
 router.post('/encolar', (req, res) => {
-  const entrada = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+  const parsed = parsearUrlYoutube(req.body && req.body.url);
 
-  let parsed;
-  try {
-    parsed = new URL(entrada);
-  } catch {
-    res.status(400).json({ ok: false, error: 'El enlace no es una URL valida' });
-    return;
-  }
-
-  const protocoloValido = parsed.protocol === 'https:' || parsed.protocol === 'http:';
-  const hostValido = HOSTS_YOUTUBE.includes(parsed.hostname.toLowerCase());
-
-  if (!protocoloValido || !hostValido) {
-    res.status(400).json({ ok: false, error: 'Solo se aceptan enlaces de YouTube' });
+  if (!parsed) {
+    res.status(400).json({ ok: false, error: 'Solo se aceptan enlaces validos de YouTube' });
     return;
   }
 

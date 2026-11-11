@@ -1,6 +1,6 @@
 {
   "name": "cliplab-pro",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Backend modular y ultraligero de ClipLab Pro: clipping de videos de YouTube con FFmpeg, subtitulos dinamicos y publicacion automatizada.",
   "private": true,
   "type": "module",
