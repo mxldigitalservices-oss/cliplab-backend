@@ -1,6 +1,7 @@
-const express = require('express');
-const router = express.Router();
-const { guardarSesionRed } = require('../sesiones');
+import { Router } from 'express';
+import { guardarSesionRed } from '../sesiones.js';
+
+const router = Router();
 
 function verificarMasterKey(req, res, next) {
   const masterKey = req.headers['x-master-key'];
@@ -20,4 +21,4 @@ router.post('/redes/tiktok', verificarMasterKey, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;
