@@ -1,7 +1,7 @@
 import { logger } from '../utils/logger.js';
 import { store } from '../storage/store.js';
 import { procesarClip } from './pipeline.js';
-import { resumirStderr } from '../utils/run.js';
+import { detalleDeError } from '../utils/run.js';
 
 const pendientes = [];
 let ejecutando = false;
@@ -17,9 +17,9 @@ async function ejecutar(trabajo) {
     await procesarClip(trabajo, controlador.signal);
     logger.info('Trabajo completado', { id: trabajo.id });
   } catch (error) {
-    const detalle = error.detalle || resumirStderr(error.stderr);
-    logger.error('Trabajo fallido', { id: trabajo.id, mensaje: error.message, detalle });
-    store.fallar(trabajo.id, error.message, detalle);
+    const detalle = detalleDeError(error);
+    logger.error('Trabajo fallido', { id: trabajo.id, mensaje: error.message, detalle: detalle.slice(-1500) });
+    store.fallarTrabajo(trabajo.id, error.message, detalle);
   } finally {
     controladorActual = null;
   }

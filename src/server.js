@@ -6,6 +6,8 @@ import { logger } from './utils/logger.js';
 import { verificarHerramientas } from './engine/herramientas.js';
 import { detenerCola } from './engine/cola.js';
 import { iniciarVigilancia, detenerVigilancia } from './sesion/gestor.js';
+import { store } from './storage/store.js';
+import { detalleDeError } from './utils/run.js';
 
 async function main() {
   await fs.mkdir(config.tmpDir, { recursive: true });
@@ -66,11 +68,14 @@ async function main() {
   process.on('SIGINT', () => shutdown('SIGINT'));
 
   process.on('unhandledRejection', (reason) => {
-    logger.error('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason)));
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    logger.error('unhandledRejection', error);
+    store.registrarIncidencia('error', 'Promesa rechazada sin controlar: ' + error.message, 'proceso', detalleDeError(error));
   });
 
   process.on('uncaughtException', (error) => {
     logger.error('uncaughtException', error);
+    store.registrarIncidencia('error', 'Excepcion no controlada: ' + error.message, 'proceso', detalleDeError(error));
     shutdown('uncaughtException');
   });
 }

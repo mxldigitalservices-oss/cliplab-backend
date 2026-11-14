@@ -1,12 +1,27 @@
 import { spawn } from 'node:child_process';
 
 const MAX_STDOUT = 1024 * 1024;
-const MAX_STDERR = 16 * 1024;
+const MAX_STDERR = 256 * 1024;
+const MAX_DETALLE = 64 * 1024;
 
 /** Ultimas lineas utiles de stderr (max. ~1500 caracteres) para guardarlas como detalle tecnico. */
 export function resumirStderr(stderr, max = 1500) {
   const texto = String(stderr || '').split('\n').map((l) => l.trimEnd()).filter(Boolean).slice(-15).join('\n');
   return texto.length > max ? '...' + texto.slice(-max) : texto;
+}
+
+/** stderr completo para la pestana de Incidencias (solo se recorta al limite de seguridad, conservando el final). */
+export function stderrCompleto(stderr, max = MAX_DETALLE) {
+  const texto = String(stderr || '').replace(/\r/g, '\n').split('\n').map((l) => l.trimEnd()).filter(Boolean).join('\n');
+  return texto.length > max ? '[... recortado ...]\n' + texto.slice(-max) : texto;
+}
+
+/** Detalle tecnico de CUALQUIER error: stderr del comando si lo hay; si no, la traza de JavaScript. */
+export function detalleDeError(error) {
+  if (!error) return '';
+  const propio = error.detalle || stderrCompleto(error.stderr);
+  if (propio) return propio;
+  return stderrCompleto(error.stack || error.message || String(error));
 }
 
 export class ComandoError extends Error {

@@ -55,6 +55,14 @@ export const config = Object.freeze({
   maxQueue: Math.max(1, toInt(process.env.MAX_QUEUE, 20)),
   maxClipsStored: Math.max(1, toInt(process.env.MAX_CLIPS_STORED, 25)),
 
+  // Extraccion multiple: de 4 a 5 clips de 30 a 60 s por video. El historial de rangos usados
+  // (anti-duplicados) se guarda en dataDir; en Railway conviene montar un volumen para que sobreviva.
+  segmentMinSeconds: Math.max(5, toInt(process.env.SEGMENT_MIN_SECONDS, 30)),
+  segmentMaxSeconds: Math.max(toInt(process.env.SEGMENT_MIN_SECONDS, 30), toInt(process.env.SEGMENT_MAX_SECONDS, 60)),
+  segmentsMin: Math.max(1, toInt(process.env.SEGMENTS_MIN, 4)),
+  segmentsMax: Math.max(1, toInt(process.env.SEGMENTS_MAX, 5)),
+  dataDir: process.env.DATA_DIR || (volumen ? path.join(volumen, 'datos') : path.join(tmpDir, 'datos')),
+
   sessionDir: process.env.SESSION_DIR || (volumen ? path.join(volumen, 'sesion') : path.join(tmpDir, 'sesion-datos')),
   sessionKey: String(process.env.SESSION_KEY || process.env.MASTER_KEY || '').trim(),
   sessionCheckMinutes: Math.max(0, toInt(process.env.SESSION_CHECK_MIN, 360)),

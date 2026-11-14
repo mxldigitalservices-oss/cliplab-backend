@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
-import { run, resumirStderr } from '../utils/run.js';
+import { run, stderrCompleto } from '../utils/run.js';
 
 const MODOS = new Set(['recorte', 'blur']);
 const RUTA_SEGURA = /^[A-Za-z0-9_\/.\-]+$/;
@@ -67,11 +67,9 @@ function construirFiltro({ modo, subtitulos, fontsDir, logo }) {
     partes.push('[b]scale=w=' + ANCHO + ':h=' + ALTO + ':force_original_aspect_ratio=decrease:force_divisible_by=2[frente]');
     partes.push('[fondo][frente]overlay=(W-w)/2:(H-h)/2,setsar=1' + salida());
   } else {
-    // Recorte centrado 9:16. El primer crop (centrado por defecto) descarta los lados antes de escalar,
-    // lo que reduce mucho el trabajo de CPU; el segundo deja el encuadre exacto con coordenadas centradas.
+    // Filtro 9:16 centrado EXACTO del plan maestro (escala hasta cubrir el lienzo y recorta al centro).
     partes.push(
-      "[0:v]crop=w='min(iw,trunc(ih*9/16/2)*2)':h=ih," +
-      'scale=' + ANCHO + ':' + ALTO + ':force_original_aspect_ratio=increase,' +
+      '[0:v]scale=' + ANCHO + ':' + ALTO + ':force_original_aspect_ratio=increase,' +
       'crop=' + ANCHO + ':' + ALTO + ':(in_w-out_w)/2:(in_h-out_h)/2,setsar=1' + salida()
     );
   }
@@ -174,7 +172,7 @@ export async function renderizarClip(opciones) {
     await fs.rm(salida, { force: true });
     const detalle = String(error.stderr || '').trim().split('\n').filter(Boolean).pop();
     const fallo = new Error('Fallo el render: ' + (detalle || error.message));
-    fallo.detalle = resumirStderr(error.stderr);
+    fallo.detalle = stderrCompleto(error.stderr) || error.message;
     throw fallo;
   }
 

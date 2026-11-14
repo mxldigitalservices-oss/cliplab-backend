@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
-import { run, ComandoError, resumirStderr } from '../utils/run.js';
+import { run, ComandoError, stderrCompleto } from '../utils/run.js';
 import { parsearUrlYoutube } from '../utils/youtube.js';
 import { conSesion, renovar, esBloqueoAntiBot } from '../sesion/gestor.js';
 
@@ -13,7 +13,7 @@ const PREFIJO_PROGRESO = 'PROGRESO';
 
 function conDetalle(mensaje, stderr) {
   const err = new Error(mensaje);
-  err.detalle = resumirStderr(stderr);
+  err.detalle = stderrCompleto(stderr);
   return err;
 }
 

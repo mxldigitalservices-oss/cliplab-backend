@@ -117,3 +117,7 @@ export function obtenerEstado(signal) {
 export function encolarVideo(url) {
   return solicitar('/api/panel/encolar', { metodo: 'POST', cuerpo: { url } });
 }
+
+export function obtenerIncidencia(id, signal) {
+  return solicitar('/api/panel/incidencias/' + encodeURIComponent(id), { signal });
+}

@@ -136,7 +136,8 @@ export function renderClips(clips, mensajeVacio) {
       (clip.estado === 'procesando'
         ? barraProgreso(clip.progreso) + '<div class="meta"><span>' + esc(clip.etapa || 'En proceso') + ' - ' + porcentaje(clip.progreso) + '%</span></div>'
         : '') +
-      (clip.copy ? '<div class="copy"><strong>Copy</strong><p>' + esc(clip.copy) + '</p></div>' : '') +
+      (clip.marketing && clip.marketing.titulo ? '<div class="copy"><strong>Titulo viral</strong><p>' + esc(clip.marketing.titulo) + '</p></div>' : '') +
+      (clip.copy ? '<div class="copy"><strong>Descripcion + hashtags</strong><p>' + esc(clip.copy) + '</p></div>' : '') +
       (clip.cta ? '<div class="copy"><strong>CTA</strong><p>' + esc(clip.cta) + '</p></div>' : '') +
       (fuente && fuente !== clip.titulo ? '<div class="fuente">Fuente: <a href="' + esc(fuente) + '" target="_blank" rel="noopener noreferrer">' + esc(fuente) + '</a></div>' : '') +
       '<div class="card-acciones">' +
@@ -180,19 +181,28 @@ export function renderLotes(lotes) {
   }).join('');
 }
 
-export function renderIncidencias(incidencias, ocultarResueltas) {
+export function renderIncidencias(incidencias, ocultarResueltas, contexto = {}) {
+  const abiertas = contexto.abiertas || new Set();
+  const textos = contexto.textos || new Map();
   const visibles = (incidencias || []).filter((i) => !(ocultarResueltas && i.resuelta));
   if (visibles.length === 0) {
     return vacio('Sin incidencias registradas.');
   }
   return visibles.map((i) => {
     const etiqueta = ETIQUETAS_NIVEL[i.nivel] || ETIQUETAS_NIVEL.info;
+    // El stderr completo se pide bajo demanda (data-inc); mientras llega se muestra el resumen.
+    const tieneDetalle = Boolean(i.tieneDetalle || i.detalle);
+    const textoDetalle = textos.get(i.id) || i.detalle || i.detalleResumen || '';
+    const kb = i.detalleBytes ? ' (' + Math.max(1, Math.round(i.detalleBytes / 1024)) + ' KB)' : '';
     return '<div class="fila nivel-' + esc(i.nivel in ETIQUETAS_NIVEL ? i.nivel : 'info') + (i.resuelta ? ' resuelta' : '') + '">' +
       '<div class="fila-cab"><span class="fila-titulo">' + esc(i.mensaje) + '</span>' + badge(etiqueta) + '</div>' +
       '<div class="meta"><span>Origen: ' + esc(i.origen || 'sistema') + '</span>' +
       '<span>' + esc(formatoFecha(i.creadoEn)) + '</span>' +
       '<span>' + (i.resuelta ? 'Resuelta' : 'Abierta') + '</span></div>' +
-      (i.detalle ? '<details class="detalle"><summary>Ver detalle tecnico</summary><pre>' + esc(i.detalle) + '</pre></details>' : '') +
+      (tieneDetalle
+        ? '<details class="detalle" data-inc="' + esc(i.id) + '"' + (abiertas.has(i.id) ? ' open' : '') + '>' +
+          '<summary>Ver stderr completo' + esc(kb) + '</summary><pre>' + esc(textoDetalle) + '</pre></details>'
+        : '') +
     '</div>';
   }).join('');
 }

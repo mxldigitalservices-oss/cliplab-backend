@@ -18,11 +18,13 @@ export function createApp() {
   app.set('trust proxy', 1);
 
   app.use(cors({ origin: config.corsOrigin }));
+  // El envelope va ANTES de express.json: un JSON malformado lanza su error dentro del parser, y la
+  // respuesta de error tambien debe salir como { success:false, data:null, error }.
+  app.use('/api', envelope);
   app.use(express.json({ limit: '1mb' }));
 
   app.use('/clips', express.static(config.clipsDir, { index: false, dotfiles: 'ignore', maxAge: '1d' }));
   app.use(express.static(publicDir, { etag: true }));
-  app.use('/api', envelope);
   app.use(routes);
 
   app.use(notFound);

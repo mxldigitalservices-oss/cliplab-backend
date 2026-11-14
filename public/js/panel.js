@@ -1,4 +1,4 @@
-import { obtenerEstado, encolarVideo, leerLlave, guardarLlave } from './api.js';
+import { obtenerEstado, encolarVideo, obtenerIncidencia, leerLlave, guardarLlave } from './api.js';
 import * as V from './views.js';
 
 const INTERVALO_MS = 4000;
@@ -21,7 +21,11 @@ const estado = {
   controlador: null,
   temporizadorAviso: null,
   temporizadorBusqueda: null,
+  incAbiertas: new Set(),
+  incTextos: new Map(),
 };
+
+const contextoIncidencias = () => ({ abiertas: estado.incAbiertas, textos: estado.incTextos });
 
 /* ---------- Indicadores y avisos ---------- */
 
@@ -89,7 +93,7 @@ function renderActual() {
       $('lista-lotes').innerHTML = V.renderLotes(estado.datos.lotes);
       break;
     case 'incidencias':
-      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas);
+      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas, contextoIncidencias());
       break;
     case 'marketing':
       $('marketing').innerHTML = V.renderMarketing(estado.datos.clips);
@@ -160,8 +164,13 @@ async function sondear() {
 
     const firma = JSON.stringify([datos.resumen, datos.conexiones, datos.lotes, datos.incidencias, datos.clips]);
     if (firma !== estado.firma) {
-      estado.firma = firma;
-      renderActual();
+      try {
+        renderActual();
+        estado.firma = firma; // solo se da por pintado si el render no fallo: se reintenta en el siguiente sondeo
+      } catch (errorRender) {
+        console.error('Error al pintar el panel', errorRender);
+        mostrarAviso('No se pudo pintar la pestana: ' + errorRender.message, 'error', 6000);
+      }
     }
 
     if ($('aviso').dataset.tipo === 'error') $('aviso').hidden = true;
@@ -280,10 +289,43 @@ function iniciarCopiar() {
     if (!boton || !estado.datos) return;
     const clip = estado.datos.clips.find((c) => c.id === boton.dataset.copiar);
     if (!clip) return;
-    const texto = [clip.copy, clip.cta].filter(Boolean).join('\n\n');
+    const titulo = clip.marketing && clip.marketing.titulo;
+    const texto = [titulo, clip.copy, clip.cta].filter(Boolean).join('\n\n');
     const copiado = await copiarTexto(texto);
     mostrarAviso(copiado ? 'Copy copiado al portapapeles.' : 'No se pudo copiar el texto.', copiado ? 'ok' : 'error');
   });
+}
+
+/* ---------- Incidencias: stderr completo bajo demanda ---------- */
+
+function iniciarIncidencias() {
+  // 'toggle' no burbujea: se escucha en captura. Se recuerda que detalles estan abiertos y su texto
+  // para que el repintado periodico no los cierre ni pierda el stderr ya descargado.
+  document.addEventListener('toggle', async (evento) => {
+    const detalles = evento.target;
+    if (!(detalles instanceof HTMLDetailsElement) || !detalles.dataset.inc) return;
+    const id = detalles.dataset.inc;
+
+    if (!detalles.open) {
+      estado.incAbiertas.delete(id);
+      return;
+    }
+    estado.incAbiertas.add(id);
+    if (estado.incTextos.has(id)) return;
+
+    const pre = detalles.querySelector('pre');
+    const previo = pre ? pre.textContent : '';
+    if (pre) pre.textContent = 'Cargando stderr completo...';
+    try {
+      const { incidencia } = await obtenerIncidencia(id);
+      const texto = (incidencia && incidencia.detalle) || previo || '(sin detalle)';
+      estado.incTextos.set(id, texto);
+      if (pre) pre.textContent = texto;
+    } catch (error) {
+      if (pre) pre.textContent = previo;
+      mostrarAviso('No se pudo cargar el detalle: ' + error.message, 'error', 5000);
+    }
+  }, true);
 }
 
 /* ---------- Filtros ---------- */
@@ -306,7 +348,7 @@ function iniciarFiltros() {
   $('inc-ocultar').addEventListener('change', (evento) => {
     estado.ocultarResueltas = evento.target.checked;
     if (estado.datos) {
-      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas);
+      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas, contextoIncidencias());
     }
   });
 }
@@ -331,6 +373,7 @@ function iniciar() {
   iniciarLlave();
   iniciarEncolar();
   iniciarCopiar();
+  iniciarIncidencias();
   iniciarFiltros();
   actualizarBotonLlave();
 
