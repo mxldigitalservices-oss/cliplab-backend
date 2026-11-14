@@ -6,17 +6,13 @@ import { run, ComandoError } from '../utils/run.js';
 import { parsearUrlYoutube } from '../utils/youtube.js';
 import { conSesion, renovar, esBloqueoAntiBot } from '../sesion/gestor.js';
 
-// Selector flexible: prefiere <=1080p, pero cae a cualquier combinacion disponible
-// (bv*+ba), luego a un stream unico (b) y por ultimo a 'best'.
 const FORMATO = 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b/best';
-// Ultimo recurso si YouTube igualmente responde "Requested format is not available".
 const FORMATO_RESPALDO = 'best/b';
 const TIMEOUT_MS = 20 * 60 * 1000;
 const PREFIJO_PROGRESO = 'PROGRESO';
 
 function explicarError(error, trasRenovar) {
   if (!(error instanceof ComandoError)) return error;
-
   const stderr = String(error.stderr || '');
   if (esBloqueoAntiBot(stderr)) {
     if (trasRenovar && trasRenovar.estado === 'sin_sesion') {
@@ -27,7 +23,6 @@ function explicarError(error, trasRenovar) {
     }
     return new Error('YouTube pidio verificacion anti-bot. Importa cookies en /sesion.html.');
   }
-
   const detalle = stderr.trim().split('\n').filter(Boolean).pop() || error.message;
   return new Error('Fallo la descarga: ' + detalle);
 }
@@ -107,13 +102,11 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     if (!bloqueo || (opciones.signal && opciones.signal.aborted)) {
       throw explicarError(error);
     }
-
     logger.warn('YouTube pidio verificacion anti-bot: se renueva la sesion y se reintenta una vez');
     const sesion = await renovar('antibot');
     if (!sesion.sondeoOk) {
       throw explicarError(error, sesion);
     }
-
     try {
       resultado = await lanzar();
     } catch (segundo) {
