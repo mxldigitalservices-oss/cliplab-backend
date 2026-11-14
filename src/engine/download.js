@@ -6,7 +6,11 @@ import { run, ComandoError } from '../utils/run.js';
 import { parsearUrlYoutube } from '../utils/youtube.js';
 import { conSesion, renovar, esBloqueoAntiBot } from '../sesion/gestor.js';
 
-const FORMATO = 'bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b';
+// Selector flexible: prefiere <=1080p, pero cae a cualquier combinacion disponible
+// (bv*+ba), luego a un stream unico (b) y por ultimo a 'best'.
+const FORMATO = 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b/best';
+// Ultimo recurso si YouTube igualmente responde "Requested format is not available".
+const FORMATO_RESPALDO = 'best/b';
 const TIMEOUT_MS = 20 * 60 * 1000;
 const PREFIJO_PROGRESO = 'PROGRESO';
 
@@ -36,7 +40,7 @@ export async function descargarVideo(url, directorio, opciones = {}) {
 
   await fs.mkdir(directorio, { recursive: true });
 
-  const base = [
+  const construirBase = (formato) => [
     '--no-playlist',
     '--no-warnings',
     '--no-colors',
@@ -46,7 +50,7 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     '--retries', '3',
     '--socket-timeout', '20',
     '--match-filter', 'duration<=' + config.maxVideoSeconds,
-    '-f', FORMATO,
+    '-f', formato,
     '--merge-output-format', 'mp4',
     '--progress',
     '--newline',
@@ -55,9 +59,13 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     '--print', 'after_move:%(id)s|%(duration)s|%(filepath)s|%(title)s',
   ];
 
-  if (path.isAbsolute(config.ffmpegPath)) {
-    base.push('--ffmpeg-location', config.ffmpegPath);
-  }
+  const argsBase = (formato) => {
+    const base = construirBase(formato);
+    if (path.isAbsolute(config.ffmpegPath)) {
+      base.push('--ffmpeg-location', config.ffmpegPath);
+    }
+    return base;
+  };
 
   let maximo = 0;
   const alLinea = (linea) => {
@@ -71,8 +79,8 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     }
   };
 
-  const lanzar = () => conSesion((rutaCookies) => {
-    const args = [...base];
+  const lanzar = (formato = FORMATO) => conSesion((rutaCookies) => {
+    const args = argsBase(formato);
     if (rutaCookies) args.push('--cookies', rutaCookies);
     args.push('--', parsed.toString());
     return run(config.ytdlpPath, args, {
@@ -82,9 +90,18 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     });
   });
 
+  const esFormatoNoDisponible = (error) =>
+    error instanceof ComandoError && /requested format is not available/i.test(String(error.stderr || ''));
+
   let resultado;
   try {
-    resultado = await lanzar();
+    try {
+      resultado = await lanzar();
+    } catch (error) {
+      if (!esFormatoNoDisponible(error) || (opciones.signal && opciones.signal.aborted)) throw error;
+      logger.warn('Formato no disponible: se reintenta con selector de respaldo (' + FORMATO_RESPALDO + ')');
+      resultado = await lanzar(FORMATO_RESPALDO);
+    }
   } catch (error) {
     const bloqueo = error instanceof ComandoError && esBloqueoAntiBot(error.stderr);
     if (!bloqueo || (opciones.signal && opciones.signal.aborted)) {
