@@ -9,6 +9,8 @@ import { transcribirAudio } from './transcribe.js';
 import { escribirAss } from './subtitles.js';
 import { renderizarClip } from './render.js';
 
+let avisoLogo = false;
+
 function crearAvance(id) {
   let ultimoProgreso = 0;
   let ultimaEtapa = '';
@@ -126,10 +128,24 @@ export async function procesarClip(trabajo, signal) {
     });
     registrarTiempo(id, 'render', marca);
 
+    if (resultado.logoOmitido && !avisoLogo) {
+      avisoLogo = true;
+      store.registrarIncidencia(
+        'warn',
+        'No se encontro el logo de Klikap (' + config.logoPath + '): los clips salen sin marca de agua',
+        'render'
+      );
+    }
+
     store.completar(id, {
       url: '/clips/' + token + '.mp4',
       duracion: resultado.duracion,
       bytes: resultado.bytes,
+      ancho: resultado.ancho,
+      alto: resultado.alto,
+      modo: trabajo.modo,
+      inicio,
+      conLogo: resultado.conLogo,
       transcripcion: palabras.map((p) => p.texto).join(' '),
     });
     exito = true;

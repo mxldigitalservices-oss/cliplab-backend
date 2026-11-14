@@ -24,6 +24,7 @@ export const config = Object.freeze({
   clipsDir: process.env.CLIPS_DIR || path.join(tmpDir, 'clips'),
 
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+  ffprobePath: process.env.FFPROBE_PATH || 'ffprobe',
   ytdlpPath: process.env.YTDLP_PATH || 'yt-dlp',
   ytdlpCookies: process.env.YTDLP_COOKIES || '',
   whisperPath: process.env.WHISPER_PATH || 'whisper-cli',
@@ -32,6 +33,16 @@ export const config = Object.freeze({
 
   fontsDir: process.env.FONTS_DIR || path.join(raiz, 'fonts'),
   subtitleFont: process.env.SUBTITLE_FONT || 'Anton',
+
+  // Marca de agua (logo de Klikap). Si el archivo no existe, los clips se generan sin logo.
+  logoEnabled: process.env.LOGO_ENABLED !== 'false',
+  logoPath: process.env.LOGO_PATH || path.join(raiz, 'assets', 'klikap-logo.png'),
+  logoPosition: ['top-right', 'top-left', 'bottom-right', 'bottom-left'].includes(process.env.LOGO_POSITION)
+    ? process.env.LOGO_POSITION
+    : 'top-right',
+  logoWidth: Math.min(540, Math.max(64, toInt(process.env.LOGO_WIDTH, 216))),
+  logoMargin: Math.max(0, toInt(process.env.LOGO_MARGIN, 56)),
+  logoOpacity: Number(process.env.LOGO_OPACITY) > 0 && Number(process.env.LOGO_OPACITY) <= 1 ? Number(process.env.LOGO_OPACITY) : 0.95,
 
   cpuThreads: Math.max(1, toInt(process.env.CPU_THREADS, 2)),
   videoCrf: toInt(process.env.VIDEO_CRF, 24),
