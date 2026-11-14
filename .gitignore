@@ -11,3 +11,5 @@ cookies/
 cookies.txt
 *.tar.gz
 sesion-datos/
+venv/
+venv/
