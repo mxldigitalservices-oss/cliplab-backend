@@ -1,43 +1,71 @@
-// Se ejecuta en TU equipo: abre un navegador visible, inicias sesión a mano (captcha/2FA incluidos)
-// y la sesión se sube cifrada al servidor.
-import { chromium } from "playwright";
-import fs from "node:fs";
-import readline from "node:readline/promises";
-import { PERFIL } from "../src/agent/perfil.js";
+// Se ejecuta en TU equipo (no en Railway): abre un navegador visible en la pagina oficial de login, tu inicias
+// sesion a mano (captcha / 2FA incluidos, con tu propia IP) y, en cuanto detecta la sesion, la envia cifrada-en-reposo
+// al servidor, que la guarda en SESSION_DIR igual que la de YouTube. El panel pasa a "Sesion activa" solo.
+//
+// Requisitos (una sola vez):  npm i --no-save playwright && npx playwright install chromium
+// Uso:  CLIPLAB_URL=https://tu-app.up.railway.app MASTER_KEY=tu-llave npm run login -- tiktok|instagram|facebook
+import fs from 'node:fs';
+import { PERFIL } from '../src/agent/perfil.js';
+import { PLATAFORMAS_RED, esPlataformaRed, esperarLogin, validarEstado } from '../src/sesion/plataformas.js';
 
-const URLS = {
-  tiktok: "https://www.tiktok.com/login",
-  instagram: "https://www.instagram.com/accounts/login/",
-  facebook: "https://www.facebook.com/login"
-};
-const plat = process.argv[2];
-if (!URLS[plat]) {
-  console.log("Uso: CLIPLAB_URL=https://tu-app.up.railway.app MASTER_KEY=... npm run login -- tiktok|instagram|facebook");
+const plataforma = process.argv[2];
+if (!esPlataformaRed(plataforma)) {
+  console.log('Uso: CLIPLAB_URL=https://tu-app.up.railway.app MASTER_KEY=... npm run login -- tiktok|instagram|facebook');
   process.exit(1);
 }
-const base = (process.env.CLIPLAB_URL || "").replace(/\/$/, "");
-const key = process.env.MASTER_KEY || "";
 
-const browser = await chromium.launch({ headless: false, args: ["--disable-blink-features=AutomationControlled"] });
-const ctx = await browser.newContext(PERFIL);
-const page = await ctx.newPage();
-await page.goto(URLS[plat]);
-
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-await rl.question(`Inicia sesión en ${plat} en la ventana abierta. Cuando veas tu cuenta, vuelve aquí y presiona Enter... `);
-rl.close();
-const estado = await ctx.storageState();
-await browser.close();
-
-if (base && key) {
-  const r = await fetch(`${base}/api/sesiones/${plat}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "x-api-key": key },
-    body: JSON.stringify(estado)
-  });
-  if (r.ok) { console.log("Sesión subida al servidor."); process.exit(0); }
-  console.log("El servidor respondió", r.status, await r.text());
+const base = (process.env.CLIPLAB_URL || '').replace(/\/$/, '');
+const llave = (process.env.MASTER_KEY || '').trim();
+if (!base || !llave) {
+  console.log('Faltan CLIPLAB_URL y/o MASTER_KEY. Sin ellas la sesion solo se guardara en un archivo local.');
 }
-const f = `sesion-${plat}.json`;
-fs.writeFileSync(f, JSON.stringify(estado), { mode: 0o600 });
-console.log(`Guardada en ${f}. Súbela desde el panel (Sesiones) y luego bórrala. No la subas a GitHub.`);
+
+let chromium;
+try {
+  ({ chromium } = await import('playwright'));
+} catch {
+  console.error('Falta Playwright. Instalalo con:  npm i --no-save playwright && npx playwright install chromium');
+  process.exit(1);
+}
+
+const def = PLATAFORMAS_RED[plataforma];
+const navegador = await chromium.launch({ headless: false, args: ['--disable-blink-features=AutomationControlled'] });
+const contexto = await navegador.newContext(PERFIL);
+const pagina = await contexto.newPage();
+await pagina.goto(def.urlLogin);
+console.log('Inicia sesion en ' + def.nombre + ' en la ventana abierta. Se detectara sola (maximo 5 minutos)...');
+
+let estado;
+try {
+  estado = await esperarLogin(contexto, plataforma);
+} catch (error) {
+  console.error(error.message);
+  await navegador.close().catch(() => {});
+  process.exit(1);
+}
+await navegador.close().catch(() => {});
+
+const valido = validarEstado(plataforma, estado);
+if (!valido.ok) {
+  console.error(valido.error);
+  process.exit(1);
+}
+
+if (base && llave) {
+  const r = await fetch(base + '/api/panel/conexiones/' + plataforma, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'x-master-key': llave },
+    body: JSON.stringify({ estado: valido.estado }),
+  });
+  const cuerpo = await r.json().catch(() => ({}));
+  if (r.ok && cuerpo.success) {
+    console.log('Listo: sesion de ' + def.nombre + ' guardada en el servidor. Revisa la pestana Conexiones.');
+    process.exit(0);
+  }
+  console.error('El servidor respondio ' + r.status + ': ' + (cuerpo.error || 'sin detalle'));
+}
+
+const archivo = 'sesion-' + plataforma + '.json';
+fs.writeFileSync(archivo, JSON.stringify(valido.estado), { mode: 0o600 });
+console.log('Sesion guardada en ' + archivo + ' (permiso 600). NO la subas a GitHub; bórrala cuando termines.');
+process.exit(1);

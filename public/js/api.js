@@ -121,3 +121,7 @@ export function encolarVideo(url) {
 export function obtenerIncidencia(id, signal) {
   return solicitar('/api/panel/incidencias/' + encodeURIComponent(id), { signal });
 }
+
+export function iniciarLoginRed(plataforma) {
+  return solicitar('/api/panel/conexiones/' + encodeURIComponent(plataforma) + '/login', { metodo: 'POST' });
+}

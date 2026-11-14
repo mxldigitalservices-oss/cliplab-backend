@@ -101,6 +101,21 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-login">
+    <h2 id="login-titulo">Iniciar sesion</h2>
+    <p id="login-mensaje"></p>
+    <ol class="pasos">
+      <li>Abre una terminal en tu copia del proyecto.</li>
+      <li>Pega y ejecuta este comando (cambia <code>&lt;tu llave&gt;</code> por tu MASTER_KEY):</li>
+    </ol>
+    <textarea id="login-comando" readonly rows="3" spellcheck="false"></textarea>
+    <p class="nota">Se abrira una ventana de la red social: inicia sesion a mano. Al detectarla, la sesion se guarda cifrada en el servidor y esta tarjeta pasa a &quot;Sesion activa&quot;.</p>
+    <div class="dlg-acciones">
+      <button id="login-copiar" class="btn" type="button">Copiar comando</button>
+      <button id="login-cerrar" class="btn btn-primario" type="button">Entendido</button>
+    </div>
+  </dialog>
+
   <noscript><p class="aviso">ClipLab Pro necesita JavaScript para funcionar.</p></noscript>
   <script type="module" src="/js/panel.js"></script>
 </body>

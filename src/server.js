@@ -6,6 +6,7 @@ import { logger } from './utils/logger.js';
 import { verificarHerramientas } from './engine/herramientas.js';
 import { detenerCola } from './engine/cola.js';
 import { iniciarVigilancia, detenerVigilancia } from './sesion/gestor.js';
+import { restaurarEstadosRedes } from './sesion/redes.js';
 import { store } from './storage/store.js';
 import { detalleDeError } from './utils/run.js';
 
@@ -38,6 +39,7 @@ async function main() {
       env: config.env,
     });
     iniciarVigilancia();
+    restaurarEstadosRedes().catch((error) => logger.warn('No se restauraron las sesiones de redes', { mensaje: error.message }));
   });
 
   let shuttingDown = false;

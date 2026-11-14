@@ -118,6 +118,14 @@ function registrarIncidencia(nivel, mensaje, origen, detalle) {
   return incidencia;
 }
 
+/** Actualiza la tarjeta de una red social en la pestana Conexiones (estado, cuenta, ultimaVerificacion...). */
+function actualizarConexion(plataforma, campos) {
+  const conexion = datos.conexiones.find((c) => c.plataforma === plataforma);
+  if (!conexion) return null;
+  Object.assign(conexion, campos);
+  return conexion;
+}
+
 function obtenerIncidencia(id) {
   return datos.incidencias.find((i) => i.id === id) || null;
 }
@@ -197,6 +205,7 @@ export const store = {
   buscar,
   fallarTrabajo,
   obtenerIncidencia,
+  actualizarConexion,
   actualizar,
   completar,
   fallar,

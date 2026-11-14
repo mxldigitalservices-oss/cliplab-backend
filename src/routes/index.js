@@ -3,6 +3,7 @@ import healthRoutes from './health.js';
 import statusRoutes from './status.js';
 import panelRoutes from './panel.js';
 import sesionRoutes from './sesion.js';
+import conexionesRoutes from './conexiones.js';
 
 const router = Router();
 
@@ -18,6 +19,7 @@ router.get('/api', (req, res) => {
 router.use(healthRoutes);
 router.use('/api', statusRoutes);
 router.use('/api/panel/sesion', sesionRoutes);
+router.use('/api/panel/conexiones', conexionesRoutes);
 router.use('/api/panel', panelRoutes);
 
 export default router;

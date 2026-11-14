@@ -153,11 +153,16 @@ export function renderConexiones(conexiones) {
     return vacio('No hay cuentas vinculadas todavia.');
   }
   return conexiones.map((c) => {
-    const etiqueta = ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
+    const etiqueta = c.conectando
+      ? { texto: 'Esperando inicio de sesion...', clase: 'warn' }
+      : ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
+    const activa = c.estado === 'activa' && !c.conectando;
     return '<article class="card">' +
       '<div class="card-cab"><h3>' + esc(NOMBRES_PLATAFORMA[c.plataforma] || c.plataforma) + '</h3>' + badge(etiqueta) + '</div>' +
-      '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || 'sin vincular') + '</span>' +
+      '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || (activa ? 'cuenta vinculada' : 'sin vincular')) + '</span>' +
       '<span>Ultima verificacion: ' + esc(formatoFecha(c.ultimaVerificacion)) + '</span></div>' +
+      '<div class="acciones"><button class="btn' + (activa ? '' : ' btn-primario') + '" type="button" data-login="' + esc(c.plataforma) + '"' +
+        (c.conectando ? ' disabled' : '') + '>' + (activa ? 'Reconectar' : 'Iniciar sesion') + '</button></div>' +
     '</article>';
   }).join('');
 }

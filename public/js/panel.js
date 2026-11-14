@@ -1,4 +1,4 @@
-import { obtenerEstado, encolarVideo, obtenerIncidencia, leerLlave, guardarLlave } from './api.js';
+import { obtenerEstado, encolarVideo, obtenerIncidencia, iniciarLoginRed, leerLlave, guardarLlave } from './api.js';
 import * as V from './views.js';
 
 const INTERVALO_MS = 4000;
@@ -296,6 +296,37 @@ function iniciarCopiar() {
   });
 }
 
+/* ---------- Conexiones: boton "Iniciar sesion" ---------- */
+
+function iniciarLoginRedes() {
+  document.addEventListener('click', async (evento) => {
+    const boton = evento.target.closest('[data-login]');
+    if (!boton) return;
+    boton.disabled = true;
+    try {
+      const r = await iniciarLoginRed(boton.dataset.login);
+      if (r.modo === 'local') {
+        $('login-titulo').textContent = 'Iniciar sesion en ' + (boton.closest('.card').querySelector('h3').textContent);
+        $('login-mensaje').textContent = r.mensaje;
+        $('login-comando').value = r.comando;
+        $('dlg-login').showModal();
+      } else {
+        mostrarAviso(r.mensaje, 'ok', 8000);
+        sondearYa();
+      }
+    } catch (error) {
+      mostrarAviso(error.message, 'error', 7000);
+    } finally {
+      boton.disabled = false;
+    }
+  });
+  $('login-cerrar').addEventListener('click', () => $('dlg-login').close());
+  $('login-copiar').addEventListener('click', async () => {
+    const copiado = await copiarTexto($('login-comando').value);
+    mostrarAviso(copiado ? 'Comando copiado.' : 'Selecciona el texto y copialo a mano.', copiado ? 'ok' : 'error');
+  });
+}
+
 /* ---------- Incidencias: stderr completo bajo demanda ---------- */
 
 function iniciarIncidencias() {
@@ -374,6 +405,7 @@ function iniciar() {
   iniciarEncolar();
   iniciarCopiar();
   iniciarIncidencias();
+  iniciarLoginRedes();
   iniciarFiltros();
   actualizarBotonLlave();
 

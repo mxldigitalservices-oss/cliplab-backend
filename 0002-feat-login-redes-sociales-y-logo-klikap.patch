@@ -1,0 +1,1653 @@
+From 7adf3c5fffabf4d6a8381c0aae0f7b363f28d70a Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 14 Nov 2026 20:16:42 +0000
+Subject: [PATCH] feat: login manual de redes sociales (Conexiones) y logo
+ oficial de Klikap
+
+Conexiones:
+- Botones 'Iniciar sesion' / 'Reconectar' en las tarjetas de Facebook, Instagram y TikTok.
+- POST /api/panel/conexiones/:plataforma/login: con pantalla disponible abre Playwright (headful) en la pagina oficial
+  de login; en un servidor remoto sin pantalla (Railway) responde modo 'local' con el comando de scripts/login-local.js.
+- PUT /api/panel/conexiones/:plataforma recibe el storageState, lo valida (cookies de acceso por red, solo dominios
+  de la red) y lo guarda cifrado AES-256-GCM en SESSION_DIR (red-<plataforma>.enc), igual que la sesion de YouTube.
+- La tarjeta pasa a 'Sesion activa' al guardar y se restaura al reiniciar el servidor. El sondeo nunca trae cookies.
+- scripts/login-local.js reparado: usaba /api/sesiones/:plat (ruta inexistente) y la cabecera x-api-key.
+
+Logo:
+- assets/klikap-logo.png (PNG RGBA 648x176, fondo transparente) y scripts/generar-logo.py para regenerarlo.
+- Verificado con render real: aparece arriba a la derecha y no toca la zona de subtitulos.
+
+Tests: 45 en total (12 nuevos).
+---
+ assets/klikap-logo.png       | Bin 0 -> 31971 bytes
+ package.json                 |   3 +-
+ public/css/panel.css         |   6 +
+ public/index.html            |  15 +++
+ public/js/api.js             |   4 +
+ public/js/panel.js           |  34 ++++-
+ public/js/views.js           |   9 +-
+ scripts/generar-logo.py      |  53 ++++++++
+ scripts/login-local.js       | 106 +++++++++------
+ src/routes/conexiones.js     |  59 +++++++++
+ src/routes/index.js          |   2 +
+ src/server.js                |   2 +
+ src/sesion/login-servidor.js |  68 ++++++++++
+ src/sesion/plataformas.js    | 111 ++++++++++++++++
+ src/sesion/redes.js          |  83 ++++++++++++
+ src/storage/store.js         |   9 ++
+ tests/conexiones.test.js     | 250 +++++++++++++++++++++++++++++++++++
+ 17 files changed, 771 insertions(+), 43 deletions(-)
+ create mode 100644 assets/klikap-logo.png
+ create mode 100644 scripts/generar-logo.py
+ create mode 100644 src/routes/conexiones.js
+ create mode 100644 src/sesion/login-servidor.js
+ create mode 100644 src/sesion/plataformas.js
+ create mode 100644 src/sesion/redes.js
+ create mode 100644 tests/conexiones.test.js
+
+diff --git a/assets/klikap-logo.png b/assets/klikap-logo.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..cd58ec75e19091f8f5b1cb37940e1c4ab62f7a1e
+GIT binary patch
+literal 31971
+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
+E2mWXUVgLXD
+
+literal 0
+HcmV?d00001
+
+diff --git a/package.json b/package.json
+index d435344..6f2b88f 100644
+--- a/package.json
++++ b/package.json
+@@ -11,7 +11,8 @@
+   "scripts": {
+     "start": "node src/server.js",
+     "dev": "node --watch src/server.js",
+-    "test": "node --test tests/sesion.test.js tests/envelope.test.js tests/render.test.js tests/segmentos.test.js tests/marketing.test.js tests/multiclip.test.js"
++    "test": "node --test tests/sesion.test.js tests/envelope.test.js tests/render.test.js tests/segmentos.test.js tests/marketing.test.js tests/multiclip.test.js tests/conexiones.test.js",
++    "login": "node scripts/login-local.js"
+   },
+   "dependencies": {
+     "cors": "^2.8.5",
+diff --git a/public/css/panel.css b/public/css/panel.css
+index 023b387..b63e93b 100644
+--- a/public/css/panel.css
++++ b/public/css/panel.css
+@@ -109,3 +109,9 @@ dialog input { width: 100%; margin: 8px 0 12px; }
+ .detalle { margin-top: 6px; font-size: 12px; color: #9aa4b5; }
+ .detalle summary { cursor: pointer; }
+ .detalle pre { margin: 6px 0 0; padding: 8px 10px; background: var(--sf2); border-radius: 8px; white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; }
++
++.card .acciones { margin-top: 12px; }
++#dlg-login { width: min(94vw, 520px); }
++#dlg-login .pasos { margin: 8px 0; padding-left: 20px; }
++#dlg-login textarea { width: 100%; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; background: #0f131c; color: var(--tx); border: 1px solid var(--bd); border-radius: 8px; padding: 8px; resize: none; }
++#dlg-login .nota { opacity: .75; font-size: 12.5px; }
+diff --git a/public/index.html b/public/index.html
+index 213db6a..25fe8d9 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -101,6 +101,21 @@
+     </form>
+   </dialog>
+ 
++  <dialog id="dlg-login">
++    <h2 id="login-titulo">Iniciar sesion</h2>
++    <p id="login-mensaje"></p>
++    <ol class="pasos">
++      <li>Abre una terminal en tu copia del proyecto.</li>
++      <li>Pega y ejecuta este comando (cambia <code>&lt;tu llave&gt;</code> por tu MASTER_KEY):</li>
++    </ol>
++    <textarea id="login-comando" readonly rows="3" spellcheck="false"></textarea>
++    <p class="nota">Se abrira una ventana de la red social: inicia sesion a mano. Al detectarla, la sesion se guarda cifrada en el servidor y esta tarjeta pasa a &quot;Sesion activa&quot;.</p>
++    <div class="dlg-acciones">
++      <button id="login-copiar" class="btn" type="button">Copiar comando</button>
++      <button id="login-cerrar" class="btn btn-primario" type="button">Entendido</button>
++    </div>
++  </dialog>
++
+   <noscript><p class="aviso">ClipLab Pro necesita JavaScript para funcionar.</p></noscript>
+   <script type="module" src="/js/panel.js"></script>
+ </body>
+diff --git a/public/js/api.js b/public/js/api.js
+index 904ce75..5054e9a 100644
+--- a/public/js/api.js
++++ b/public/js/api.js
+@@ -121,3 +121,7 @@ export function encolarVideo(url) {
+ export function obtenerIncidencia(id, signal) {
+   return solicitar('/api/panel/incidencias/' + encodeURIComponent(id), { signal });
+ }
++
++export function iniciarLoginRed(plataforma) {
++  return solicitar('/api/panel/conexiones/' + encodeURIComponent(plataforma) + '/login', { metodo: 'POST' });
++}
+diff --git a/public/js/panel.js b/public/js/panel.js
+index 54b7baa..14f1fcf 100644
+--- a/public/js/panel.js
++++ b/public/js/panel.js
+@@ -1,4 +1,4 @@
+-import { obtenerEstado, encolarVideo, obtenerIncidencia, leerLlave, guardarLlave } from './api.js';
++import { obtenerEstado, encolarVideo, obtenerIncidencia, iniciarLoginRed, leerLlave, guardarLlave } from './api.js';
+ import * as V from './views.js';
+ 
+ const INTERVALO_MS = 4000;
+@@ -296,6 +296,37 @@ function iniciarCopiar() {
+   });
+ }
+ 
++/* ---------- Conexiones: boton "Iniciar sesion" ---------- */
++
++function iniciarLoginRedes() {
++  document.addEventListener('click', async (evento) => {
++    const boton = evento.target.closest('[data-login]');
++    if (!boton) return;
++    boton.disabled = true;
++    try {
++      const r = await iniciarLoginRed(boton.dataset.login);
++      if (r.modo === 'local') {
++        $('login-titulo').textContent = 'Iniciar sesion en ' + (boton.closest('.card').querySelector('h3').textContent);
++        $('login-mensaje').textContent = r.mensaje;
++        $('login-comando').value = r.comando;
++        $('dlg-login').showModal();
++      } else {
++        mostrarAviso(r.mensaje, 'ok', 8000);
++        sondearYa();
++      }
++    } catch (error) {
++      mostrarAviso(error.message, 'error', 7000);
++    } finally {
++      boton.disabled = false;
++    }
++  });
++  $('login-cerrar').addEventListener('click', () => $('dlg-login').close());
++  $('login-copiar').addEventListener('click', async () => {
++    const copiado = await copiarTexto($('login-comando').value);
++    mostrarAviso(copiado ? 'Comando copiado.' : 'Selecciona el texto y copialo a mano.', copiado ? 'ok' : 'error');
++  });
++}
++
+ /* ---------- Incidencias: stderr completo bajo demanda ---------- */
+ 
+ function iniciarIncidencias() {
+@@ -374,6 +405,7 @@ function iniciar() {
+   iniciarEncolar();
+   iniciarCopiar();
+   iniciarIncidencias();
++  iniciarLoginRedes();
+   iniciarFiltros();
+   actualizarBotonLlave();
+ 
+diff --git a/public/js/views.js b/public/js/views.js
+index 0019886..72ce0b1 100644
+--- a/public/js/views.js
++++ b/public/js/views.js
+@@ -153,11 +153,16 @@ export function renderConexiones(conexiones) {
+     return vacio('No hay cuentas vinculadas todavia.');
+   }
+   return conexiones.map((c) => {
+-    const etiqueta = ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
++    const etiqueta = c.conectando
++      ? { texto: 'Esperando inicio de sesion...', clase: 'warn' }
++      : ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
++    const activa = c.estado === 'activa' && !c.conectando;
+     return '<article class="card">' +
+       '<div class="card-cab"><h3>' + esc(NOMBRES_PLATAFORMA[c.plataforma] || c.plataforma) + '</h3>' + badge(etiqueta) + '</div>' +
+-      '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || 'sin vincular') + '</span>' +
++      '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || (activa ? 'cuenta vinculada' : 'sin vincular')) + '</span>' +
+       '<span>Ultima verificacion: ' + esc(formatoFecha(c.ultimaVerificacion)) + '</span></div>' +
++      '<div class="acciones"><button class="btn' + (activa ? '' : ' btn-primario') + '" type="button" data-login="' + esc(c.plataforma) + '"' +
++        (c.conectando ? ' disabled' : '') + '>' + (activa ? 'Reconectar' : 'Iniciar sesion') + '</button></div>' +
+     '</article>';
+   }).join('');
+ }
+diff --git a/scripts/generar-logo.py b/scripts/generar-logo.py
+new file mode 100644
+index 0000000..1b7dede
+--- /dev/null
++++ b/scripts/generar-logo.py
+@@ -0,0 +1,53 @@
++#!/usr/bin/env python3
++"""Genera assets/klikap-logo.png: wordmark 'klikap' minimalista con fondo transparente.
++Blanco con sombra suave (legible sobre cualquier video) y un acento corporativo en el punto de la 'i'.
++Si existe un logo oficial, reemplaza el PNG y no hace falta ejecutar esto."""
++from PIL import Image, ImageDraw, ImageFilter, ImageFont
++import sys
++
++SALIDA = sys.argv[1] if len(sys.argv) > 1 else 'assets/klikap-logo.png'
++FUENTE = '/usr/share/fonts/truetype/google-fonts/Poppins-Bold.ttf'
++ACENTO = (91, 108, 255, 255)   # azul violeta: no choca con el amarillo/verde de los subtitulos
++BLANCO = (255, 255, 255, 255)
++K = 4                          # supersampling para bordes limpios
++ANCHO, ALTO = 648, 176         # 3x del ancho de render (216 px) para que escale nitido
++
++fuente = ImageFont.truetype(FUENTE, 112 * K)
++texto = 'klikap'
++
++# Mide el texto y centra todo el conjunto (icono + palabra).
++caja = fuente.getbbox(texto)
++tw, th = caja[2] - caja[0], caja[3] - caja[1]
++icono = 96 * K
++hueco = 22 * K
++total = icono + hueco + tw
++x0 = (ANCHO * K - total) // 2
++y_icono = (ALTO * K - icono) // 2
++
++capa = Image.new('RGBA', (ANCHO * K, ALTO * K), (0, 0, 0, 0))
++d = ImageDraw.Draw(capa)
++
++# Icono: cuadrado redondeado de acento con un "clic" (cursor en forma de flecha) en blanco.
++d.rounded_rectangle([x0, y_icono, x0 + icono, y_icono + icono], radius=int(icono * 0.28), fill=ACENTO)
++cx, cy, s = x0 + icono * 0.36, y_icono + icono * 0.26, icono * 0.46
++flecha = [(cx, cy), (cx, cy + s), (cx + s * 0.27, cy + s * 0.74), (cx + s * 0.46, cy + s * 1.06),
++          (cx + s * 0.62, cy + s * 0.98), (cx + s * 0.43, cy + s * 0.66), (cx + s * 0.78, cy + s * 0.66)]
++d.polygon(flecha, fill=BLANCO)
++
++# Palabra en blanco, alineada verticalmente con el icono.
++xt = x0 + icono + hueco - caja[0]
++yt = (ALTO * K - th) // 2 - caja[1]
++d.text((xt, yt), texto, font=fuente, fill=BLANCO, stroke_width=int(1.6 * K), stroke_fill=(15, 18, 45, 150))
++
++# Sombra suave debajo de todo para separarlo del fondo en escenas claras.
++alfa = capa.split()[3]
++sombra = Image.new('RGBA', capa.size, (0, 0, 0, 0))
++sombra.putalpha(alfa.point(lambda v: int(v * 0.85)))
++sombra = sombra.filter(ImageFilter.GaussianBlur(4 * K))
++lienzo = Image.new('RGBA', capa.size, (0, 0, 0, 0))
++lienzo.alpha_composite(sombra, (0, 2 * K))
++lienzo.alpha_composite(capa)
++
++final = lienzo.resize((ANCHO, ALTO), Image.LANCZOS)
++final.save(SALIDA, optimize=True)
++print('Logo generado:', SALIDA, final.size, final.mode)
+diff --git a/scripts/login-local.js b/scripts/login-local.js
+index 7f362fd..993682b 100644
+--- a/scripts/login-local.js
++++ b/scripts/login-local.js
+@@ -1,43 +1,71 @@
+-// Se ejecuta en TU equipo: abre un navegador visible, inicias sesión a mano (captcha/2FA incluidos)
+-// y la sesión se sube cifrada al servidor.
+-import { chromium } from "playwright";
+-import fs from "node:fs";
+-import readline from "node:readline/promises";
+-import { PERFIL } from "../src/agent/perfil.js";
+-
+-const URLS = {
+-  tiktok: "https://www.tiktok.com/login",
+-  instagram: "https://www.instagram.com/accounts/login/",
+-  facebook: "https://www.facebook.com/login"
+-};
+-const plat = process.argv[2];
+-if (!URLS[plat]) {
+-  console.log("Uso: CLIPLAB_URL=https://tu-app.up.railway.app MASTER_KEY=... npm run login -- tiktok|instagram|facebook");
++// Se ejecuta en TU equipo (no en Railway): abre un navegador visible en la pagina oficial de login, tu inicias
++// sesion a mano (captcha / 2FA incluidos, con tu propia IP) y, en cuanto detecta la sesion, la envia cifrada-en-reposo
++// al servidor, que la guarda en SESSION_DIR igual que la de YouTube. El panel pasa a "Sesion activa" solo.
++//
++// Requisitos (una sola vez):  npm i --no-save playwright && npx playwright install chromium
++// Uso:  CLIPLAB_URL=https://tu-app.up.railway.app MASTER_KEY=tu-llave npm run login -- tiktok|instagram|facebook
++import fs from 'node:fs';
++import { PERFIL } from '../src/agent/perfil.js';
++import { PLATAFORMAS_RED, esPlataformaRed, esperarLogin, validarEstado } from '../src/sesion/plataformas.js';
++
++const plataforma = process.argv[2];
++if (!esPlataformaRed(plataforma)) {
++  console.log('Uso: CLIPLAB_URL=https://tu-app.up.railway.app MASTER_KEY=... npm run login -- tiktok|instagram|facebook');
++  process.exit(1);
++}
++
++const base = (process.env.CLIPLAB_URL || '').replace(/\/$/, '');
++const llave = (process.env.MASTER_KEY || '').trim();
++if (!base || !llave) {
++  console.log('Faltan CLIPLAB_URL y/o MASTER_KEY. Sin ellas la sesion solo se guardara en un archivo local.');
++}
++
++let chromium;
++try {
++  ({ chromium } = await import('playwright'));
++} catch {
++  console.error('Falta Playwright. Instalalo con:  npm i --no-save playwright && npx playwright install chromium');
+   process.exit(1);
+ }
+-const base = (process.env.CLIPLAB_URL || "").replace(/\/$/, "");
+-const key = process.env.MASTER_KEY || "";
+-
+-const browser = await chromium.launch({ headless: false, args: ["--disable-blink-features=AutomationControlled"] });
+-const ctx = await browser.newContext(PERFIL);
+-const page = await ctx.newPage();
+-await page.goto(URLS[plat]);
+-
+-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+-await rl.question(`Inicia sesión en ${plat} en la ventana abierta. Cuando veas tu cuenta, vuelve aquí y presiona Enter... `);
+-rl.close();
+-const estado = await ctx.storageState();
+-await browser.close();
+-
+-if (base && key) {
+-  const r = await fetch(`${base}/api/sesiones/${plat}`, {
+-    method: "PUT",
+-    headers: { "Content-Type": "application/json", "x-api-key": key },
+-    body: JSON.stringify(estado)
++
++const def = PLATAFORMAS_RED[plataforma];
++const navegador = await chromium.launch({ headless: false, args: ['--disable-blink-features=AutomationControlled'] });
++const contexto = await navegador.newContext(PERFIL);
++const pagina = await contexto.newPage();
++await pagina.goto(def.urlLogin);
++console.log('Inicia sesion en ' + def.nombre + ' en la ventana abierta. Se detectara sola (maximo 5 minutos)...');
++
++let estado;
++try {
++  estado = await esperarLogin(contexto, plataforma);
++} catch (error) {
++  console.error(error.message);
++  await navegador.close().catch(() => {});
++  process.exit(1);
++}
++await navegador.close().catch(() => {});
++
++const valido = validarEstado(plataforma, estado);
++if (!valido.ok) {
++  console.error(valido.error);
++  process.exit(1);
++}
++
++if (base && llave) {
++  const r = await fetch(base + '/api/panel/conexiones/' + plataforma, {
++    method: 'PUT',
++    headers: { 'Content-Type': 'application/json', 'x-master-key': llave },
++    body: JSON.stringify({ estado: valido.estado }),
+   });
+-  if (r.ok) { console.log("Sesión subida al servidor."); process.exit(0); }
+-  console.log("El servidor respondió", r.status, await r.text());
++  const cuerpo = await r.json().catch(() => ({}));
++  if (r.ok && cuerpo.success) {
++    console.log('Listo: sesion de ' + def.nombre + ' guardada en el servidor. Revisa la pestana Conexiones.');
++    process.exit(0);
++  }
++  console.error('El servidor respondio ' + r.status + ': ' + (cuerpo.error || 'sin detalle'));
+ }
+-const f = `sesion-${plat}.json`;
+-fs.writeFileSync(f, JSON.stringify(estado), { mode: 0o600 });
+-console.log(`Guardada en ${f}. Súbela desde el panel (Sesiones) y luego bórrala. No la subas a GitHub.`);
++
++const archivo = 'sesion-' + plataforma + '.json';
++fs.writeFileSync(archivo, JSON.stringify(valido.estado), { mode: 0o600 });
++console.log('Sesion guardada en ' + archivo + ' (permiso 600). NO la subas a GitHub; bórrala cuando termines.');
++process.exit(1);
+diff --git a/src/routes/conexiones.js b/src/routes/conexiones.js
+new file mode 100644
+index 0000000..7b3c114
+--- /dev/null
++++ b/src/routes/conexiones.js
+@@ -0,0 +1,59 @@
++import { Router } from 'express';
++import { requireMasterKey } from '../middleware/auth.js';
++import { errorHttp } from '../sesion/cookies.js';
++import { PLATAFORMAS_RED, esPlataformaRed } from '../sesion/plataformas.js';
++import { guardarSesionRed } from '../sesion/redes.js';
++import { iniciarLoginEnServidor, puedeAbrirVentana } from '../sesion/login-servidor.js';
++
++const router = Router();
++router.use(requireMasterKey);
++
++const envolver = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
++
++function validarPlataforma(req) {
++  if (!esPlataformaRed(req.params.plataforma)) {
++    throw errorHttp(404, 'Plataforma no soportada: ' + req.params.plataforma);
++  }
++  return req.params.plataforma;
++}
++
++function baseUrl(req) {
++  const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0].trim();
++  return proto + '://' + req.get('host');
++}
++
++// Boton "Iniciar sesion" de la tarjeta.
++router.post('/:plataforma/login', envolver(async (req, res) => {
++  const plataforma = validarPlataforma(req);
++  const def = PLATAFORMAS_RED[plataforma];
++
++  if (puedeAbrirVentana()) {
++    await iniciarLoginEnServidor(plataforma);
++    res.status(202).json({
++      ok: true,
++      modo: 'servidor',
++      plataforma,
++      mensaje: 'Se abrio la ventana de ' + def.nombre + ' en el servidor. Inicia sesion ahi; el panel se actualiza solo.',
++    });
++    return;
++  }
++
++  // Servidor remoto sin pantalla (Railway): la ventana se abre en el equipo de la persona y sube la sesion cifrada.
++  res.status(200).json({
++    ok: true,
++    modo: 'local',
++    plataforma,
++    mensaje: 'El servidor no tiene pantalla. Ejecuta este comando en tu computadora: abrira ' + def.nombre + ' para que inicies sesion a mano.',
++    comando: 'CLIPLAB_URL=' + baseUrl(req) + ' MASTER_KEY=<tu llave> npm run login -- ' + plataforma,
++  });
++}));
++
++// Recibe el storageState capturado por scripts/login-local.js (o cualquier cliente con la llave).
++router.put('/:plataforma', envolver(async (req, res) => {
++  const plataforma = validarPlataforma(req);
++  const cuerpo = req.body && typeof req.body === 'object' ? req.body : {};
++  const resultado = await guardarSesionRed(plataforma, cuerpo.estado || cuerpo);
++  res.status(200).json({ ok: true, ...resultado });
++}));
++
++export default router;
+diff --git a/src/routes/index.js b/src/routes/index.js
+index 4e2ce2a..441e404 100644
+--- a/src/routes/index.js
++++ b/src/routes/index.js
+@@ -3,6 +3,7 @@ import healthRoutes from './health.js';
+ import statusRoutes from './status.js';
+ import panelRoutes from './panel.js';
+ import sesionRoutes from './sesion.js';
++import conexionesRoutes from './conexiones.js';
+ 
+ const router = Router();
+ 
+@@ -18,6 +19,7 @@ router.get('/api', (req, res) => {
+ router.use(healthRoutes);
+ router.use('/api', statusRoutes);
+ router.use('/api/panel/sesion', sesionRoutes);
++router.use('/api/panel/conexiones', conexionesRoutes);
+ router.use('/api/panel', panelRoutes);
+ 
+ export default router;
+diff --git a/src/server.js b/src/server.js
+index ce8420d..7938415 100644
+--- a/src/server.js
++++ b/src/server.js
+@@ -6,6 +6,7 @@ import { logger } from './utils/logger.js';
+ import { verificarHerramientas } from './engine/herramientas.js';
+ import { detenerCola } from './engine/cola.js';
+ import { iniciarVigilancia, detenerVigilancia } from './sesion/gestor.js';
++import { restaurarEstadosRedes } from './sesion/redes.js';
+ import { store } from './storage/store.js';
+ import { detalleDeError } from './utils/run.js';
+ 
+@@ -38,6 +39,7 @@ async function main() {
+       env: config.env,
+     });
+     iniciarVigilancia();
++    restaurarEstadosRedes().catch((error) => logger.warn('No se restauraron las sesiones de redes', { mensaje: error.message }));
+   });
+ 
+   let shuttingDown = false;
+diff --git a/src/sesion/login-servidor.js b/src/sesion/login-servidor.js
+new file mode 100644
+index 0000000..1011994
+--- /dev/null
++++ b/src/sesion/login-servidor.js
+@@ -0,0 +1,68 @@
++import { store } from '../storage/store.js';
++import { logger } from '../utils/logger.js';
++import { detalleDeError } from '../utils/run.js';
++import { PERFIL } from '../agent/perfil.js';
++import { PLATAFORMAS_RED, esPlataformaRed, esperarLogin } from './plataformas.js';
++import { guardarSesionRed } from './redes.js';
++import { errorHttp } from './cookies.js';
++
++// Login manual con un navegador controlado (Playwright) que se abre EN EL SERVIDOR. Solo tiene sentido cuando el
++// servidor tiene pantalla (ejecucion local, o DISPLAY / LOGIN_HEADFUL=true). En Railway no hay pantalla ni
++// Chromium: ahi la ruta responde con el modo "local" (scripts/login-local.js desde el equipo del usuario).
++
++let enCurso = null;
++export const loginEnCurso = () => enCurso;
++
++export function puedeAbrirVentana(env = process.env, so = process.platform) {
++  if (env.LOGIN_HEADFUL === 'true') return true;
++  if (env.LOGIN_HEADFUL === 'false') return false;
++  if (env.RAILWAY_ENVIRONMENT || env.RAILWAY_PROJECT_ID) return false;
++  return so === 'darwin' || so === 'win32' || Boolean(env.DISPLAY || env.WAYLAND_DISPLAY);
++}
++
++async function cargarChromium() {
++  try {
++    return (await import('playwright')).chromium;
++  } catch {
++    throw errorHttp(501, 'Playwright no esta instalado en el servidor. Ejecuta: npm i --no-save playwright && npx playwright install chromium');
++  }
++}
++
++/**
++ * Abre la ventana de login y devuelve enseguida; la captura de cookies sigue en segundo plano.
++ * deps (solo pruebas): { launch, opciones }
++ */
++export async function iniciarLoginEnServidor(plataforma, deps = {}) {
++  if (!esPlataformaRed(plataforma)) throw errorHttp(404, 'Plataforma no soportada: ' + plataforma);
++  if (enCurso) throw errorHttp(409, 'Ya hay un inicio de sesion en curso (' + enCurso.plataforma + '). Termina esa ventana primero.');
++
++  let launch = deps.launch;
++  if (!launch) {
++    const chromium = await cargarChromium();
++    launch = chromium.launch.bind(chromium);
++  }
++  const def = PLATAFORMAS_RED[plataforma];
++  enCurso = { plataforma, desde: new Date().toISOString() };
++  store.actualizarConexion(plataforma, { conectando: true });
++
++  const tarea = (async () => {
++    let browser;
++    try {
++      browser = await launch({ headless: false, args: ['--disable-blink-features=AutomationControlled'] });
++      const contexto = await browser.newContext(PERFIL);
++      const pagina = await contexto.newPage();
++      await pagina.goto(def.urlLogin, { waitUntil: 'domcontentloaded' });
++      const estado = await esperarLogin(contexto, plataforma, deps.opciones);
++      await guardarSesionRed(plataforma, estado);
++    } catch (error) {
++      logger.warn('Login manual no completado', { plataforma, mensaje: error.message });
++      store.actualizarConexion(plataforma, { conectando: false });
++      store.registrarIncidencia('warn', 'Inicio de sesion en ' + def.nombre + ' no completado: ' + error.message, 'conexiones', detalleDeError(error));
++    } finally {
++      await browser?.close().catch(() => {});
++      enCurso = null;
++    }
++  })();
++
++  return { modo: 'servidor', plataforma, tarea };
++}
+diff --git a/src/sesion/plataformas.js b/src/sesion/plataformas.js
+new file mode 100644
+index 0000000..5468142
+--- /dev/null
++++ b/src/sesion/plataformas.js
+@@ -0,0 +1,111 @@
++// Definicion de las redes sociales (Facebook, Instagram, TikTok) para el login manual y la validacion de la sesion.
++// Modulo puro: sin dependencias de config ni de disco, para poder usarlo tambien desde scripts/login-local.js.
++
++export const PLATAFORMAS_RED = {
++  facebook: {
++    nombre: 'Facebook',
++    urlLogin: 'https://www.facebook.com/login',
++    dominio: /(^|\.)(facebook\.com|fbcdn\.net|messenger\.com)$/i,
++    // La sesion esta iniciada cuando existen TODAS estas cookies (c_user = id de la cuenta, xs = token).
++    autenticacion: [['c_user', 'xs']],
++    cuenta: 'c_user',
++  },
++  instagram: {
++    nombre: 'Instagram',
++    urlLogin: 'https://www.instagram.com/accounts/login/',
++    dominio: /(^|\.)(instagram\.com|cdninstagram\.com)$/i,
++    autenticacion: [['sessionid']],
++    cuenta: 'ds_user_id',
++  },
++  tiktok: {
++    nombre: 'TikTok',
++    urlLogin: 'https://www.tiktok.com/login',
++    dominio: /(^|\.)(tiktok\.com|tiktokv\.com|tiktokcdn\.com)$/i,
++    autenticacion: [['sessionid'], ['sessionid_ss'], ['sid_tt']],
++    cuenta: null,
++  },
++};
++
++export const esPlataformaRed = (nombre) => Object.prototype.hasOwnProperty.call(PLATAFORMAS_RED, nombre);
++
++const hostDe = (dominio) => String(dominio || '').replace(/^\./, '');
++
++function vigente(cookie, ahora) {
++  // expires -1 / 0 / undefined = cookie de sesion (vive mientras dure el navegador): se considera vigente.
++  const expira = Number(cookie.expires);
++  return !(Number.isFinite(expira) && expira > 0 && expira < ahora);
++}
++
++/**
++ * Valida y depura un storageState de Playwright para una plataforma.
++ * Conserva solo cookies/origins del dominio de la red (no se guarda nada ajeno) y exige las cookies de sesion.
++ * @returns {{ok:true, estado:object, cuenta:string|null, expira:number|null}|{ok:false, error:string}}
++ */
++export function validarEstado(plataforma, estadoCrudo, ahora = Math.floor(Date.now() / 1000)) {
++  const def = PLATAFORMAS_RED[plataforma];
++  if (!def) return { ok: false, error: 'Plataforma no soportada' };
++  if (!estadoCrudo || typeof estadoCrudo !== 'object' || !Array.isArray(estadoCrudo.cookies)) {
++    return { ok: false, error: 'El estado de sesion no tiene cookies' };
++  }
++
++  const cookies = estadoCrudo.cookies
++    .filter((c) => c && c.name && c.domain && def.dominio.test(hostDe(c.domain)))
++    .map((c) => ({
++      name: String(c.name),
++      value: String(c.value ?? ''),
++      domain: String(c.domain),
++      path: c.path || '/',
++      expires: Number.isFinite(Number(c.expires)) ? Number(c.expires) : -1,
++      httpOnly: Boolean(c.httpOnly),
++      secure: Boolean(c.secure),
++      sameSite: ['Strict', 'Lax', 'None'].includes(c.sameSite) ? c.sameSite : 'Lax',
++    }));
++
++  if (cookies.length === 0) {
++    return { ok: false, error: 'No hay cookies de ' + def.nombre + ' en la sesion capturada' };
++  }
++
++  const vivas = cookies.filter((c) => c.value && vigente(c, ahora));
++  const tiene = (grupo) => grupo.every((n) => vivas.some((c) => c.name === n));
++  if (!def.autenticacion.some(tiene)) {
++    const falta = def.autenticacion.map((g) => g.join(' + ')).join(' o ');
++    return { ok: false, error: 'La sesion de ' + def.nombre + ' no esta iniciada (faltan cookies de acceso: ' + falta + ')' };
++  }
++
++  const origins = (Array.isArray(estadoCrudo.origins) ? estadoCrudo.origins : [])
++    .filter((o) => o && o.origin && def.dominio.test(new URL(o.origin).hostname));
++
++  const cuentaCookie = def.cuenta ? vivas.find((c) => c.name === def.cuenta) : null;
++  const caducables = vivas.filter((c) => c.expires > 0 && def.autenticacion.flat().includes(c.name));
++  return {
++    ok: true,
++    estado: { cookies, origins },
++    cuenta: cuentaCookie ? 'ID ' + cuentaCookie.value : null,
++    expira: caducables.length ? Math.min(...caducables.map((c) => c.expires)) : null,
++  };
++}
++
++/**
++ * Espera a que la persona inicie sesion a mano en la ventana y devuelve el storageState.
++ * Sondea las cookies del contexto; en cuanto aparecen las de acceso espera un instante para que terminen
++ * de escribirse las demas (redirecciones) y devuelve el estado.
++ */
++export async function esperarLogin(contexto, plataforma, { timeoutMs = 5 * 60 * 1000, intervaloMs = 1500, asentarMs = 2500, ahora = Date.now } = {}) {
++  const limite = ahora() + timeoutMs;
++  for (;;) {
++    let cookies;
++    try {
++      cookies = await contexto.cookies();
++    } catch {
++      throw new Error('Se cerro la ventana del navegador antes de terminar de iniciar sesion');
++    }
++    if (validarEstado(plataforma, { cookies }).ok) {
++      await new Promise((r) => setTimeout(r, asentarMs));
++      return contexto.storageState();
++    }
++    if (ahora() >= limite) {
++      throw new Error('Se agoto el tiempo (' + Math.round(timeoutMs / 60000) + ' min) esperando el inicio de sesion');
++    }
++    await new Promise((r) => setTimeout(r, intervaloMs));
++  }
++}
+diff --git a/src/sesion/redes.js b/src/sesion/redes.js
+new file mode 100644
+index 0000000..a73011c
+--- /dev/null
++++ b/src/sesion/redes.js
+@@ -0,0 +1,83 @@
++import fs from 'node:fs/promises';
++import path from 'node:path';
++import { config } from '../config/index.js';
++import { logger } from '../utils/logger.js';
++import { store } from '../storage/store.js';
++import { cifrar, descifrar, infoAlmacen } from './almacen.js';
++import { PLATAFORMAS_RED, esPlataformaRed, validarEstado } from './plataformas.js';
++import { errorHttp } from './cookies.js';
++
++// Sesiones de Facebook / Instagram / TikTok: se guardan cifradas (AES-256-GCM, la misma clave y el mismo
++// SESSION_DIR que la sesion de YouTube) en red-<plataforma>.enc. Nunca viajan al panel: solo su estado.
++
++const archivo = async (plataforma) => path.join((await infoAlmacen()).dir, 'red-' + plataforma + '.enc');
++
++async function escribirAtomico(ruta, contenido) {
++  const temporal = ruta + '.' + process.pid + '.tmp';
++  await fs.writeFile(temporal, contenido, { mode: 0o600 });
++  await fs.rename(temporal, ruta);
++}
++
++function marcarActiva(plataforma, { cuenta, expira, guardadoEn }) {
++  store.actualizarConexion(plataforma, {
++    estado: 'activa',
++    conectando: false,
++    cuenta: cuenta || null,
++    ultimaVerificacion: guardadoEn,
++    expiraEn: expira ? new Date(expira * 1000).toISOString() : null,
++  });
++}
++
++/** Valida y guarda (cifrado) el storageState capturado tras el login manual. Actualiza el panel al instante. */
++export async function guardarSesionRed(plataforma, estadoCrudo) {
++  if (!esPlataformaRed(plataforma)) throw errorHttp(404, 'Plataforma no soportada: ' + plataforma);
++  if (!config.sessionKey) {
++    throw errorHttp(503, 'Define SESSION_KEY (o MASTER_KEY) en el servidor para poder cifrar la sesion.');
++  }
++
++  const resultado = validarEstado(plataforma, estadoCrudo);
++  if (!resultado.ok) throw errorHttp(400, resultado.error);
++
++  const guardadoEn = new Date().toISOString();
++  await escribirAtomico(
++    await archivo(plataforma),
++    cifrar({ plataforma, estado: resultado.estado, cuenta: resultado.cuenta, expira: resultado.expira, guardadoEn })
++  );
++  marcarActiva(plataforma, { cuenta: resultado.cuenta, expira: resultado.expira, guardadoEn });
++  logger.info('Sesion de red social guardada', { plataforma, cookies: resultado.estado.cookies.length });
++  return { plataforma, cuenta: resultado.cuenta, guardadoEn, cookies: resultado.estado.cookies.length };
++}
++
++/** Sesion descifrada lista para Playwright (storageState); null si no hay. Uso interno del publicador. */
++export async function leerSesionRed(plataforma) {
++  if (!esPlataformaRed(plataforma)) return null;
++  let texto;
++  try {
++    texto = await fs.readFile(await archivo(plataforma), 'utf8');
++  } catch (error) {
++    if (error.code === 'ENOENT') return null;
++    throw error;
++  }
++  return descifrar(texto).estado;
++}
++
++/** Al arrancar: las tarjetas reflejan las sesiones ya guardadas (el store es en memoria y empieza en "Sin sesion"). */
++export async function restaurarEstadosRedes() {
++  if (!config.sessionKey) return;
++  for (const plataforma of Object.keys(PLATAFORMAS_RED)) {
++    try {
++      const texto = await fs.readFile(await archivo(plataforma), 'utf8');
++      const sesion = descifrar(texto);
++      const vencida = sesion.expira && sesion.expira * 1000 < Date.now();
++      if (vencida) {
++        store.actualizarConexion(plataforma, { estado: 'expirada', cuenta: sesion.cuenta || null, ultimaVerificacion: sesion.guardadoEn });
++      } else {
++        marcarActiva(plataforma, sesion);
++      }
++    } catch (error) {
++      if (error.code !== 'ENOENT') {
++        logger.warn('No se pudo restaurar la sesion guardada', { plataforma, mensaje: error.message });
++      }
++    }
++  }
++}
+diff --git a/src/storage/store.js b/src/storage/store.js
+index 0626b58..2b554a8 100644
+--- a/src/storage/store.js
++++ b/src/storage/store.js
+@@ -118,6 +118,14 @@ function registrarIncidencia(nivel, mensaje, origen, detalle) {
+   return incidencia;
+ }
+ 
++/** Actualiza la tarjeta de una red social en la pestana Conexiones (estado, cuenta, ultimaVerificacion...). */
++function actualizarConexion(plataforma, campos) {
++  const conexion = datos.conexiones.find((c) => c.plataforma === plataforma);
++  if (!conexion) return null;
++  Object.assign(conexion, campos);
++  return conexion;
++}
++
+ function obtenerIncidencia(id) {
+   return datos.incidencias.find((i) => i.id === id) || null;
+ }
+@@ -197,6 +205,7 @@ export const store = {
+   buscar,
+   fallarTrabajo,
+   obtenerIncidencia,
++  actualizarConexion,
+   actualizar,
+   completar,
+   fallar,
+diff --git a/tests/conexiones.test.js b/tests/conexiones.test.js
+new file mode 100644
+index 0000000..ddbf63c
+--- /dev/null
++++ b/tests/conexiones.test.js
+@@ -0,0 +1,250 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { spawnSync } from 'node:child_process';
++
++const raiz = await fs.mkdtemp(path.join(os.tmpdir(), 'cliplab-conx-'));
++process.env.TMP_DIR = path.join(raiz, 'tmp');
++process.env.SESSION_DIR = path.join(raiz, 'sesion');
++process.env.DATA_DIR = path.join(raiz, 'datos');
++process.env.MASTER_KEY = 'llave-de-prueba';
++process.env.LOG_LEVEL = 'error';
++delete process.env.RAILWAY_ENVIRONMENT;
++delete process.env.RAILWAY_PROJECT_ID;
++
++const { validarEstado, esperarLogin } = await import('../src/sesion/plataformas.js');
++const { guardarSesionRed, leerSesionRed, restaurarEstadosRedes } = await import('../src/sesion/redes.js');
++const { iniciarLoginEnServidor, puedeAbrirVentana } = await import('../src/sesion/login-servidor.js');
++const { store } = await import('../src/storage/store.js');
++const { createApp } = await import('../src/app.js');
++
++test.after(() => fs.rm(raiz, { recursive: true, force: true }));
++
++const MAS_TARDE = Math.floor(Date.now() / 1000) + 86400 * 30;
++const cookie = (name, value, domain, extra = {}) => ({ name, value, domain, path: '/', expires: MAS_TARDE, httpOnly: true, secure: true, sameSite: 'None', ...extra });
++const estadoFacebook = () => ({
++  cookies: [cookie('c_user', '100012345', '.facebook.com'), cookie('xs', 'xs-secreto-no-debe-verse', '.facebook.com'), cookie('ajena', 'x', '.google.com')],
++  origins: [{ origin: 'https://www.facebook.com', localStorage: [] }, { origin: 'https://evil.example', localStorage: [] }],
++});
++const conexion = (p) => store.snapshot().conexiones.find((c) => c.plataforma === p);
++
++/* ---------- validacion ---------- */
++
++test('valida cookies de acceso por plataforma y descarta lo ajeno', () => {
++  const fb = validarEstado('facebook', estadoFacebook());
++  assert.equal(fb.ok, true);
++  assert.equal(fb.cuenta, 'ID 100012345');
++  assert.ok(fb.estado.cookies.every((c) => /facebook\.com$/.test(c.domain)), 'sin cookies de otros dominios');
++  assert.deepEqual(fb.estado.origins.map((o) => o.origin), ['https://www.facebook.com']);
++
++  assert.equal(validarEstado('instagram', { cookies: [cookie('sessionid', 'abc', '.instagram.com'), cookie('ds_user_id', '77', '.instagram.com')] }).ok, true);
++  assert.equal(validarEstado('tiktok', { cookies: [cookie('sid_tt', 'abc', '.tiktok.com')] }).ok, true);
++});
++
++test('rechaza sesiones sin iniciar, vencidas, vacias o de otra red', () => {
++  assert.match(validarEstado('facebook', { cookies: [cookie('c_user', '1', '.facebook.com')] }).error, /no esta iniciada/);
++  assert.equal(validarEstado('facebook', { cookies: [cookie('c_user', '1', '.facebook.com', { expires: 5 }), cookie('xs', 'a', '.facebook.com', { expires: 5 })] }).ok, false);
++  assert.equal(validarEstado('instagram', { cookies: [cookie('sessionid', 'abc', '.tiktok.com')] }).ok, false);
++  assert.equal(validarEstado('facebook', {}).ok, false);
++  assert.equal(validarEstado('myspace', estadoFacebook()).ok, false);
++  // cookie de sesion (expires -1) cuenta como vigente
++  assert.equal(validarEstado('instagram', { cookies: [cookie('sessionid', 'abc', '.instagram.com', { expires: -1 })] }).ok, true);
++});
++
++/* ---------- espera del login manual ---------- */
++
++function contextoFalso(secuencia) {
++  let i = 0;
++  return {
++    async cookies() {
++      const paso = secuencia[Math.min(i++, secuencia.length - 1)];
++      if (paso === 'cerrado') throw new Error('Target closed');
++      return paso;
++    },
++    async storageState() { return { cookies: secuencia.at(-1), origins: [] }; },
++  };
++}
++const rapido = { intervaloMs: 1, asentarMs: 1 };
++
++test('esperarLogin: devuelve el estado cuando la persona termina de iniciar sesion', async () => {
++  const final = estadoFacebook().cookies;
++  const estado = await esperarLogin(contextoFalso([[], [cookie('datr', 'x', '.facebook.com')], final]), 'facebook', rapido);
++  assert.ok(estado.cookies.some((c) => c.name === 'xs'));
++});
++
++test('esperarLogin: avisa si cierran la ventana o se agota el tiempo', async () => {
++  await assert.rejects(esperarLogin(contextoFalso([[], 'cerrado']), 'facebook', rapido), /cerro la ventana/);
++  await assert.rejects(esperarLogin(contextoFalso([[]]), 'facebook', { ...rapido, timeoutMs: 30 }), /Se agoto el tiempo/);
++});
++
++/* ---------- guardado cifrado + API ---------- */
++
++test('guardado cifrado en SESSION_DIR; el panel pasa a "activa" al instante', async () => {
++  assert.equal(conexion('facebook').estado, 'sin_sesion');
++  const r = await guardarSesionRed('facebook', estadoFacebook());
++  assert.equal(r.cuenta, 'ID 100012345');
++
++  const c = conexion('facebook');
++  assert.equal(c.estado, 'activa');
++  assert.equal(c.conectando, false);
++  assert.equal(c.cuenta, 'ID 100012345');
++  assert.ok(c.ultimaVerificacion);
++
++  const bruto = await fs.readFile(path.join(process.env.SESSION_DIR, 'red-facebook.enc'), 'utf8');
++  assert.ok(!bruto.includes('xs-secreto-no-debe-verse') && !bruto.includes('100012345'), 'el archivo esta cifrado');
++  assert.equal(JSON.parse(bruto).v, 1);
++  const modo = (await fs.stat(path.join(process.env.SESSION_DIR, 'red-facebook.enc'))).mode & 0o777;
++  assert.equal(modo, 0o600);
++
++  const leida = await leerSesionRed('facebook');
++  assert.ok(leida.cookies.some((x) => x.name === 'xs' && x.value === 'xs-secreto-no-debe-verse'));
++  assert.equal(await leerSesionRed('tiktok'), null);
++});
++
++test('tras reiniciar el servidor las tarjetas recuperan su estado', async () => {
++  store.actualizarConexion('facebook', { estado: 'sin_sesion', cuenta: null, ultimaVerificacion: null }); // simula arranque en frio
++  await restaurarEstadosRedes();
++  assert.equal(conexion('facebook').estado, 'activa');
++  assert.equal(conexion('instagram').estado, 'sin_sesion');
++});
++
++test('API: PUT guarda, POST login responde segun el entorno, errores con envelope', async () => {
++  const servidor = createApp().listen(0, '127.0.0.1');
++  await new Promise((ok) => servidor.once('listening', ok));
++  const base = 'http://127.0.0.1:' + servidor.address().port;
++  const H = { 'x-master-key': 'llave-de-prueba', 'content-type': 'application/json' };
++  const pedir = async (ruta, opciones = {}) => {
++    const r = await fetch(base + ruta, opciones);
++    return { status: r.status, cuerpo: await r.json() };
++  };
++
++  try {
++    // Sin llave: 401 con envelope
++    const sinLlave = await pedir('/api/panel/conexiones/tiktok/login', { method: 'POST' });
++    assert.equal(sinLlave.status, 401);
++    assert.deepEqual([sinLlave.cuerpo.success, sinLlave.cuerpo.data], [false, null]);
++
++    // PUT valido (formato del script local: { estado })
++    const tiktok = { cookies: [cookie('sessionid', 'tt-secreto', '.tiktok.com')], origins: [] };
++    const ok = await pedir('/api/panel/conexiones/tiktok', { method: 'PUT', headers: H, body: JSON.stringify({ estado: tiktok }) });
++    assert.equal(ok.status, 200);
++    assert.equal(ok.cuerpo.success, true);
++    assert.equal(ok.cuerpo.error, null);
++
++    // El panel lo ve activo y el sondeo NO trae cookies
++    const estado = await pedir('/api/panel/estado', { headers: H });
++    assert.equal(estado.cuerpo.data.conexiones.find((c) => c.plataforma === 'tiktok').estado, 'activa');
++    assert.ok(!JSON.stringify(estado.cuerpo).includes('tt-secreto'));
++
++    // PUT invalido / plataforma desconocida
++    const malo = await pedir('/api/panel/conexiones/instagram', { method: 'PUT', headers: H, body: JSON.stringify({ estado: { cookies: [] } }) });
++    assert.equal(malo.status, 400);
++    assert.deepEqual([malo.cuerpo.success, malo.cuerpo.data], [false, null]);
++    assert.equal((await pedir('/api/panel/conexiones/myspace', { method: 'PUT', headers: H, body: '{}' })).status, 404);
++    assert.equal((await pedir('/api/panel/conexiones/myspace/login', { method: 'POST', headers: H })).status, 404);
++
++    // Servidor remoto sin pantalla (Railway): modo "local" con el comando listo
++    process.env.RAILWAY_ENVIRONMENT = 'production';
++    const local = await pedir('/api/panel/conexiones/instagram/login', { method: 'POST', headers: H });
++    delete process.env.RAILWAY_ENVIRONMENT;
++    assert.equal(local.status, 200);
++    assert.equal(local.cuerpo.success, true);
++    assert.equal(local.cuerpo.data.modo, 'local');
++    assert.match(local.cuerpo.data.comando, /CLIPLAB_URL=http:\/\/127\.0\.0\.1:\d+ MASTER_KEY=<tu llave> npm run login -- instagram/);
++    assert.equal(conexion('instagram').estado, 'sin_sesion', 'el modo local no cambia nada hasta recibir la sesion');
++  } finally {
++    servidor.close();
++  }
++});
++
++/* ---------- navegador controlado en el servidor (con pantalla) ---------- */
++
++test('puedeAbrirVentana: Railway no; local o con pantalla si', () => {
++  assert.equal(puedeAbrirVentana({ RAILWAY_ENVIRONMENT: 'production', DISPLAY: ':0' }, 'linux'), false);
++  assert.equal(puedeAbrirVentana({}, 'linux'), false);
++  assert.equal(puedeAbrirVentana({ DISPLAY: ':0' }, 'linux'), true);
++  assert.equal(puedeAbrirVentana({}, 'win32'), true);
++  assert.equal(puedeAbrirVentana({ LOGIN_HEADFUL: 'true', RAILWAY_ENVIRONMENT: 'x' }, 'linux'), true);
++});
++
++function lanzadorFalso(secuencia, registro = {}) {
++  return async (opciones) => {
++    registro.opciones = opciones;
++    return {
++      async newContext(perfil) {
++        registro.perfil = perfil;
++        const ctx = contextoFalso(secuencia);
++        ctx.newPage = async () => ({ goto: async (url) => { registro.url = url; } });
++        return ctx;
++      },
++      async close() { registro.cerrado = true; },
++    };
++  };
++}
++
++test('login en servidor: abre la pagina oficial, captura cookies y deja la tarjeta activa', async () => {
++  const registro = {};
++  const igCookies = [cookie('sessionid', 'ig-secreto', '.instagram.com'), cookie('ds_user_id', '555', '.instagram.com')];
++  const { modo, tarea } = await iniciarLoginEnServidor('instagram', { launch: lanzadorFalso([[], igCookies], registro), opciones: rapido });
++  assert.equal(modo, 'servidor');
++  assert.equal(conexion('instagram').conectando, true);
++  await assert.rejects(iniciarLoginEnServidor('tiktok', { launch: lanzadorFalso([[]]) }), (e) => e.status === 409, 'solo un login a la vez');
++  await tarea;
++
++  assert.equal(registro.url, 'https://www.instagram.com/accounts/login/');
++  assert.equal(registro.opciones.headless, false, 'ventana visible para escribir las credenciales a mano');
++  assert.equal(registro.cerrado, true);
++  const c = conexion('instagram');
++  assert.deepEqual([c.estado, c.conectando, c.cuenta], ['activa', false, 'ID 555']);
++  assert.ok(await leerSesionRed('instagram'));
++});
++
++test('login en servidor: si cierran la ventana queda incidencia y la tarjeta se libera', async () => {
++  store.actualizarConexion('tiktok', { estado: 'sin_sesion', cuenta: null });
++  const { tarea } = await iniciarLoginEnServidor('tiktok', { launch: lanzadorFalso([[], 'cerrado']), opciones: rapido });
++  await tarea;
++  assert.equal(conexion('tiktok').conectando, false);
++  assert.equal(conexion('tiktok').estado, 'sin_sesion');
++  const inc = store.snapshot().incidencias.find((i) => i.origen === 'conexiones');
++  assert.ok(inc && /TikTok/.test(inc.mensaje) && /cerro la ventana/.test(inc.mensaje));
++});
++
++test('login en servidor sin Playwright instalado: error claro 501', async () => {
++  await assert.rejects(iniciarLoginEnServidor('facebook'), (e) => e.status === 501 && /Playwright/.test(e.message));
++  assert.equal(conexion('facebook').conectando ?? false, false);
++});
++
++/* ---------- logo de Klikap en el render ---------- */
++
++const hayFfmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
++
++test('el logo oficial existe, es PNG transparente y sale arriba a la derecha del clip 1080x1920', { skip: !hayFfmpeg && 'ffmpeg no disponible' }, async () => {
++  const { config } = await import('../src/config/index.js');
++  assert.equal(path.basename(config.logoPath), 'klikap-logo.png');
++  const png = await fs.readFile(config.logoPath);
++  assert.equal(png.subarray(1, 4).toString(), 'PNG');
++  assert.equal(png[25], 6, 'PNG RGBA (con canal alfa)');
++
++  const { renderizarClip } = await import('../src/engine/render.js');
++  const fuente = path.join(raiz, 'fuente.mp4');
++  const ff = (args) => assert.equal(spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]).status, 0);
++  ff(['-f', 'lavfi', '-i', 'color=c=0x1d4d2b:s=640x360:d=3:r=5', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', fuente]);
++
++  const salida = path.join(raiz, 'clip.mp4');
++  const r = await renderizarClip({ entrada: fuente, salida, inicio: 0, duracion: 2, subtitulos: null, modo: 'recorte' });
++  assert.equal(r.conLogo, true);
++  assert.deepEqual([r.ancho, r.alto], [1080, 1920]);
++
++  const brillo = (filtro) => {
++    const p = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-ss', '1', '-i', salida, '-frames:v', '1', '-vf', filtro + ',format=gray', '-f', 'rawvideo', '-']);
++    return p.stdout.reduce((max, v) => (v > max ? v : max), 0);
++  };
++  const esquinaSuperiorDerecha = brillo('crop=300:140:760:30');
++  const esquinaSuperiorIzquierda = brillo('crop=300:140:20:30');
++  const zonaSubtitulos = brillo('crop=900:300:90:1300');
++  assert.ok(esquinaSuperiorDerecha > 200, 'hay blanco del logo arriba a la derecha (' + esquinaSuperiorDerecha + ')');
++  assert.ok(esquinaSuperiorIzquierda < 120, 'arriba a la izquierda no hay logo');
++  assert.ok(zonaSubtitulos < 120, 'la zona de subtitulos queda libre');
++});
+-- 
+2.43.0
+
