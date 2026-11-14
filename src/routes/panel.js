@@ -1,5 +1,5 @@
-const express = require('express');
-const router = express.Router();
+const { Router } = require('express');
+const router = Router();
 
 function verificarMasterKey(req, res, next) {
   const masterKey = req.headers['x-master-key'];
