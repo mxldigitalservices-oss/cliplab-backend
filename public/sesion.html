@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Sesion de YouTube - ClipLab Pro</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/sesion.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><h1>Sesion de <span>YouTube</span></h1></div>
+      <div class="acciones"><a class="btn" href="/" style="text-decoration:none">&larr; Panel</a></div>
+    </header>
+
+    <section class="ses-card">
+      <div class="ses-cab"><h2>Estado</h2><span id="s-badge" class="ses-badge ses-neutro">Cargando</span></div>
+      <p id="s-detalle" class="ses-suave"></p>
+      <dl class="ses-datos">
+        <dt>Cookies</dt><dd id="s-cookies">-</dd>
+        <dt>Login vence</dt><dd id="s-vence">-</dd>
+        <dt>Ultima verificacion</dt><dd id="s-verif">-</dd>
+        <dt>Ultima renovacion</dt><dd id="s-renov">-</dd>
+        <dt>Almacenamiento</dt><dd id="s-persist">-</dd>
+      </dl>
+      <p id="s-aviso" class="ses-aviso" hidden></p>
+      <div class="ses-acciones">
+        <button id="b-verificar" class="btn" type="button">Verificar ahora</button>
+        <button id="b-borrar" class="btn" type="button">Borrar sesion</button>
+      </div>
+    </section>
+
+    <section class="ses-card">
+      <h2>Importar cookies</h2>
+      <p class="ses-suave">Inicia sesion en YouTube en una ventana privada con una cuenta secundaria, exporta las cookies con una extension de cookies.txt y pega el contenido aqui. Acepta formato Netscape (cookies.txt) o JSON. Se guardan cifradas y nunca se muestran.</p>
+      <textarea id="t-cookies" rows="8" spellcheck="false" autocomplete="off" placeholder="# Netscape HTTP Cookie File"></textarea>
+      <div class="ses-acciones">
+        <button id="b-guardar" class="btn btn-primario" type="button">Guardar y verificar</button>
+      </div>
+      <p id="s-msg" class="ses-suave" role="status"></p>
+    </section>
+  </div>
+  <script type="module" src="/js/sesion.js"></script>
+</body>
+</html>

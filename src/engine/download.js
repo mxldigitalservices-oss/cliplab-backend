@@ -1,19 +1,27 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config/index.js';
+import { logger } from '../utils/logger.js';
 import { run, ComandoError } from '../utils/run.js';
 import { parsearUrlYoutube } from '../utils/youtube.js';
+import { conSesion, renovar, esBloqueoAntiBot } from '../sesion/gestor.js';
 
 const FORMATO = 'bv*[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b';
 const TIMEOUT_MS = 20 * 60 * 1000;
 const PREFIJO_PROGRESO = 'PROGRESO';
 
-function explicarError(error) {
+function explicarError(error, trasRenovar) {
   if (!(error instanceof ComandoError)) return error;
 
   const stderr = String(error.stderr || '');
-  if (/confirm you.re not a bot|Sign in to confirm/i.test(stderr)) {
-    return new Error('YouTube pidio verificacion anti-bot. Configura YTDLP_COOKIES con un archivo de cookies de una sesion valida.');
+  if (esBloqueoAntiBot(stderr)) {
+    if (trasRenovar && trasRenovar.estado === 'sin_sesion') {
+      return new Error('YouTube pidio verificacion anti-bot y no hay sesion guardada. Importa cookies en /sesion.html.');
+    }
+    if (trasRenovar) {
+      return new Error('YouTube siguio pidiendo verificacion anti-bot tras renovar la sesion. Importa cookies frescas en /sesion.html.');
+    }
+    return new Error('YouTube pidio verificacion anti-bot. Importa cookies en /sesion.html.');
   }
 
   const detalle = stderr.trim().split('\n').filter(Boolean).pop() || error.message;
@@ -28,7 +36,7 @@ export async function descargarVideo(url, directorio, opciones = {}) {
 
   await fs.mkdir(directorio, { recursive: true });
 
-  const args = [
+  const base = [
     '--no-playlist',
     '--no-warnings',
     '--no-colors',
@@ -48,12 +56,8 @@ export async function descargarVideo(url, directorio, opciones = {}) {
   ];
 
   if (path.isAbsolute(config.ffmpegPath)) {
-    args.push('--ffmpeg-location', config.ffmpegPath);
+    base.push('--ffmpeg-location', config.ffmpegPath);
   }
-  if (config.ytdlpCookies) {
-    args.push('--cookies', config.ytdlpCookies);
-  }
-  args.push('--', parsed.toString());
 
   let maximo = 0;
   const alLinea = (linea) => {
@@ -67,15 +71,37 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     }
   };
 
-  let resultado;
-  try {
-    resultado = await run(config.ytdlpPath, args, {
+  const lanzar = () => conSesion((rutaCookies) => {
+    const args = [...base];
+    if (rutaCookies) args.push('--cookies', rutaCookies);
+    args.push('--', parsed.toString());
+    return run(config.ytdlpPath, args, {
       timeoutMs: TIMEOUT_MS,
       signal: opciones.signal,
       onStdoutLine: alLinea,
     });
+  });
+
+  let resultado;
+  try {
+    resultado = await lanzar();
   } catch (error) {
-    throw explicarError(error);
+    const bloqueo = error instanceof ComandoError && esBloqueoAntiBot(error.stderr);
+    if (!bloqueo || (opciones.signal && opciones.signal.aborted)) {
+      throw explicarError(error);
+    }
+
+    logger.warn('YouTube pidio verificacion anti-bot: se renueva la sesion y se reintenta una vez');
+    const sesion = await renovar('antibot');
+    if (!sesion.sondeoOk) {
+      throw explicarError(error, sesion);
+    }
+
+    try {
+      resultado = await lanzar();
+    } catch (segundo) {
+      throw explicarError(segundo, sesion);
+    }
   }
 
   const linea = resultado.stdout

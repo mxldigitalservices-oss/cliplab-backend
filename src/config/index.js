@@ -11,6 +11,7 @@ function toInt(value, fallback) {
 }
 
 const tmpDir = process.env.TMP_DIR || path.join(os.tmpdir(), 'cliplab');
+const volumen = process.env.RAILWAY_VOLUME_MOUNT_PATH || '';
 
 export const config = Object.freeze({
   env: process.env.NODE_ENV || 'development',
@@ -42,4 +43,9 @@ export const config = Object.freeze({
   defaultRenderMode: process.env.DEFAULT_RENDER_MODE === 'blur' ? 'blur' : 'recorte',
   maxQueue: Math.max(1, toInt(process.env.MAX_QUEUE, 20)),
   maxClipsStored: Math.max(1, toInt(process.env.MAX_CLIPS_STORED, 25)),
+
+  sessionDir: process.env.SESSION_DIR || (volumen ? path.join(volumen, 'sesion') : path.join(tmpDir, 'sesion-datos')),
+  sessionKey: String(process.env.SESSION_KEY || process.env.MASTER_KEY || '').trim(),
+  sessionCheckMinutes: Math.max(0, toInt(process.env.SESSION_CHECK_MIN, 360)),
+  sessionProbeUrl: process.env.SESSION_PROBE_URL || 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
 });

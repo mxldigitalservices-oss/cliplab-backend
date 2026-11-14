@@ -5,11 +5,18 @@ import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { verificarHerramientas } from './engine/herramientas.js';
 import { detenerCola } from './engine/cola.js';
+import { iniciarVigilancia, detenerVigilancia } from './sesion/gestor.js';
 
 async function main() {
   await fs.mkdir(config.tmpDir, { recursive: true });
   await fs.mkdir(config.clipsDir, { recursive: true });
   await fs.rm(path.join(config.tmpDir, 'jobs'), { recursive: true, force: true });
+  // Cookies descifradas que pudieron quedar de una ejecucion anterior interrumpida.
+  await fs.rm(path.join(config.tmpDir, 'sesion'), { recursive: true, force: true });
+
+  if (!config.sessionKey) {
+    logger.warn('Sin SESSION_KEY ni MASTER_KEY: no se podra guardar la sesion de YouTube');
+  }
 
   const herramientas = await verificarHerramientas();
   for (const [nombre, estado] of Object.entries(herramientas)) {
@@ -28,6 +35,7 @@ async function main() {
       port: config.port,
       env: config.env,
     });
+    iniciarVigilancia();
   });
 
   let shuttingDown = false;
@@ -36,6 +44,7 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info('Senal recibida, cerrando servidor', { signal });
+    detenerVigilancia();
     detenerCola();
 
     server.close((error) => {

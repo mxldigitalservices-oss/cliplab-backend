@@ -8,3 +8,6 @@ tmp/
 .DS_Store
 cookies/
 *.cookies.json
+cookies.txt
+*.tar.gz
+sesion-datos/
