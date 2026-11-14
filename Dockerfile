@@ -46,7 +46,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=herramientas /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
+# yt-dlp vive en una ruta escribible por el usuario "node": asi puede autoactualizarse al arrancar.
+RUN mkdir -p /app/bin && chown node:node /app/bin
+COPY --from=herramientas --chown=node:node /usr/local/bin/yt-dlp /app/bin/yt-dlp
 COPY --from=herramientas /opt/whisper /opt/whisper
 COPY --from=herramientas /opt/fonts /app/fonts
 
@@ -55,12 +57,13 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
 COPY public ./public
+COPY scripts/arranque.sh ./arranque.sh
 
 ENV NODE_ENV=production \
     PORT=8080 \
     TMP_DIR=/tmp/cliplab \
     CPU_THREADS=2 \
-    YTDLP_PATH=/usr/local/bin/yt-dlp \
+    YTDLP_PATH=/app/bin/yt-dlp \
     WHISPER_PATH=/opt/whisper/whisper-cli \
     WHISPER_MODEL=/opt/whisper/modelo.bin
 
@@ -71,4 +74,4 @@ USER node
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 8080) + '/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["node", "src/server.js"]
+CMD ["sh", "./arranque.sh"]
