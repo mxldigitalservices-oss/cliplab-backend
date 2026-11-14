@@ -1,4 +1,4 @@
-import { obtenerEstado, encolarVideo, leerLlave, guardarLlave } from './api.js';
+import { obtenerEstado, encolarVideo, leerLlave, guardarLlave, vincularRed, verificarRed, quitarRed } from './api.js';
 import * as V from './views.js';
 
 const INTERVALO_MS = 4000;
@@ -249,6 +249,92 @@ function iniciarEncolar() {
   });
 }
 
+/* ---------- Conexiones (TikTok / Instagram / Facebook) ---------- */
+
+let redActual = null;
+
+function cerrarRed() {
+  $('dlg-red').close();
+  $('input-cookies').value = '';
+  $('red-archivo').value = '';
+  $('red-error').hidden = true;
+  redActual = null;
+}
+
+function iniciarConexiones() {
+  $('lista-conexiones').addEventListener('click', async (evento) => {
+    const boton = evento.target.closest('[data-red-accion]');
+    if (!boton) return;
+    const plataforma = boton.dataset.plataforma;
+    const nombre = V.nombrePlataforma(plataforma);
+
+    if (boton.dataset.redAccion === 'vincular') {
+      redActual = plataforma;
+      $('red-titulo').textContent = 'Vincular ' + nombre;
+      $('red-error').hidden = true;
+      $('dlg-red').showModal();
+      $('input-cookies').focus();
+      return;
+    }
+
+    boton.disabled = true;
+    try {
+      if (boton.dataset.redAccion === 'verificar') {
+        const r = await verificarRed(plataforma);
+        mostrarAviso(nombre + ': ' + r.detalle, r.estado === 'activa' ? 'ok' : 'error', 6000);
+      } else if (boton.dataset.redAccion === 'quitar') {
+        if (!window.confirm('Quitar la sesion de ' + nombre + '? Se borran las cookies guardadas.')) return;
+        await quitarRed(plataforma);
+        mostrarAviso('Sesion de ' + nombre + ' eliminada.', 'info');
+      }
+      sondearYa();
+    } catch (error) {
+      if (error.status === 401) abrirLlave();
+      mostrarAviso(error.message, 'error', 6000);
+    } finally {
+      boton.disabled = false;
+    }
+  });
+
+  $('red-archivo').addEventListener('change', async (evento) => {
+    const archivo = evento.target.files && evento.target.files[0];
+    if (!archivo) return;
+    if (archivo.size > 900 * 1024) {
+      $('red-error').textContent = 'El archivo es demasiado grande (maximo ~900 KB).';
+      $('red-error').hidden = false;
+      return;
+    }
+    $('input-cookies').value = await archivo.text();
+  });
+
+  $('red-cancelar').addEventListener('click', cerrarRed);
+
+  $('form-red').addEventListener('submit', async (evento) => {
+    evento.preventDefault();
+    if (!redActual) return;
+    const boton = $('red-guardar');
+    boton.disabled = true;
+    $('red-error').hidden = true;
+    try {
+      const r = await vincularRed(redActual, $('input-cookies').value);
+      const nombre = V.nombrePlataforma(redActual);
+      cerrarRed();
+      mostrarAviso(nombre + ' conectado (' + r.cookies + ' cookies guardadas cifradas).', 'ok', 6000);
+      sondearYa();
+    } catch (error) {
+      if (error.status === 401) {
+        cerrarRed();
+        abrirLlave();
+      } else {
+        $('red-error').textContent = error.message;
+        $('red-error').hidden = false;
+      }
+    } finally {
+      boton.disabled = false;
+    }
+  });
+}
+
 /* ---------- Copiar copy / CTA ---------- */
 
 async function copiarTexto(texto) {
@@ -330,6 +416,7 @@ function iniciar() {
 
   iniciarLlave();
   iniciarEncolar();
+  iniciarConexiones();
   iniciarCopiar();
   iniciarFiltros();
   actualizarBotonLlave();

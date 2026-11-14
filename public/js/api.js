@@ -112,3 +112,15 @@ export function obtenerEstado(signal) {
 export function encolarVideo(url) {
   return solicitar('/api/panel/encolar', { metodo: 'POST', cuerpo: { url } });
 }
+
+export function vincularRed(plataforma, cookies) {
+  return solicitar('/api/panel/redes/' + encodeURIComponent(plataforma), { metodo: 'POST', cuerpo: { cookies } });
+}
+
+export function verificarRed(plataforma) {
+  return solicitar('/api/panel/redes/' + encodeURIComponent(plataforma) + '/verificar', { metodo: 'POST' });
+}
+
+export function quitarRed(plataforma) {
+  return solicitar('/api/panel/redes/' + encodeURIComponent(plataforma), { metodo: 'DELETE' });
+}

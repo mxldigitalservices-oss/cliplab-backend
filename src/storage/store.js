@@ -99,6 +99,13 @@ function retirarVideo(rutaUrl) {
   }
 }
 
+function actualizarConexion(plataforma, parche) {
+  const conexion = datos.conexiones.find((c) => c.plataforma === plataforma);
+  if (!conexion) return null;
+  Object.assign(conexion, parche);
+  return conexion;
+}
+
 function snapshot() {
   const clips = datos.clips;
   const hoy = new Date().toISOString().slice(0, 10);
@@ -132,5 +139,6 @@ export const store = {
   fallar,
   retirarVideo,
   registrarIncidencia,
+  actualizarConexion,
   snapshot,
 };

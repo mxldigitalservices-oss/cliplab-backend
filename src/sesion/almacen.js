@@ -116,3 +116,40 @@ export async function borrarTodo() {
   await fs.rm(path.join(dir, ARCHIVO_PERFIL), { force: true });
   await fs.rm(path.join(dir, ARCHIVO_ESTADO), { force: true });
 }
+
+/* ---- Archivos cifrados adicionales (redes sociales): no tocan perfil.enc de YouTube ---- */
+
+const NOMBRE_VALIDO = /^[a-z0-9-]{1,40}$/;
+
+function rutaArchivo(dir, nombre) {
+  if (!NOMBRE_VALIDO.test(nombre)) throw new Error('Nombre de archivo de sesion no valido');
+  return path.join(dir, nombre + '.enc');
+}
+
+export async function guardarCifrado(nombre, objeto) {
+  const dir = await resolverDir();
+  await escribirAtomico(rutaArchivo(dir, nombre), cifrar(objeto));
+}
+
+export async function leerCifrado(nombre) {
+  const dir = await resolverDir();
+  let texto;
+  try {
+    texto = await fs.readFile(rutaArchivo(dir, nombre), 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+  try {
+    return descifrar(texto);
+  } catch {
+    const error = new Error('No se pudo descifrar la sesion guardada (cambio SESSION_KEY o MASTER_KEY?). Vincula la cuenta de nuevo.');
+    error.codigo = 'ILEGIBLE';
+    throw error;
+  }
+}
+
+export async function borrarCifrado(nombre) {
+  const dir = await resolverDir();
+  await fs.rm(rutaArchivo(dir, nombre), { force: true });
+}

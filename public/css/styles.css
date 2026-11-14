@@ -169,3 +169,7 @@ dialog p { color: var(--suave); margin: 0 0 12px; }
 }
 
 .secreto { -webkit-text-security: disc; }
+
+.secreto-area { width: 100%; background: var(--fondo, #0b0d12); color: var(--texto); border: 1px solid var(--borde); border-radius: 8px; padding: 8px; font-family: ui-monospace, monospace; font-size: 12px; -webkit-text-security: disc; resize: vertical; }
+#red-archivo { margin-top: 8px; font-size: 12px; color: var(--suave); }
+.red-error { color: var(--err); margin: 8px 0 0; }

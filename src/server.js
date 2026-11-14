@@ -6,6 +6,7 @@ import { logger } from './utils/logger.js';
 import { verificarHerramientas } from './engine/herramientas.js';
 import { detenerCola } from './engine/cola.js';
 import { iniciarVigilancia, detenerVigilancia } from './sesion/gestor.js';
+import { iniciarRedes, detenerRedes } from './sesion/redes.js';
 
 async function main() {
   await fs.mkdir(config.tmpDir, { recursive: true });
@@ -36,6 +37,7 @@ async function main() {
       env: config.env,
     });
     iniciarVigilancia();
+    iniciarRedes();
   });
 
   let shuttingDown = false;
@@ -45,6 +47,7 @@ async function main() {
     shuttingDown = true;
     logger.info('Senal recibida, cerrando servidor', { signal });
     detenerVigilancia();
+    detenerRedes();
     detenerCola();
 
     server.close((error) => {

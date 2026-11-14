@@ -101,6 +101,20 @@
     </form>
   </dialog>
 
+  <dialog id="dlg-red">
+    <form id="form-red" autocomplete="off">
+      <h2 id="red-titulo">Vincular cuenta</h2>
+      <p>Inicia sesion en la red desde tu navegador, exporta las cookies (JSON de Cookie-Editor o cookies.txt) y pegalas aqui o sube el archivo. Se guardan cifradas en el servidor y nunca se muestran.</p>
+      <textarea id="input-cookies" class="secreto-area" rows="7" spellcheck="false" autocomplete="off" placeholder="Pega aqui las cookies"></textarea>
+      <input id="red-archivo" type="file" accept=".json,.txt,application/json,text/plain">
+      <p id="red-error" class="red-error" role="alert" hidden></p>
+      <div class="dlg-acciones">
+        <button id="red-cancelar" class="btn" type="button">Cancelar</button>
+        <button id="red-guardar" class="btn btn-primario" type="submit">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
   <noscript><p class="aviso">ClipLab Pro necesita JavaScript para funcionar.</p></noscript>
   <script type="module" src="/js/panel.js"></script>
 </body>

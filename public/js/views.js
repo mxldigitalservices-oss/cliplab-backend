@@ -6,8 +6,10 @@ const ETIQUETAS_CLIP = {
 };
 
 const ETIQUETAS_CONEXION = {
-  activa: { texto: 'Sesion activa', clase: 'ok' },
-  expirada: { texto: 'Sesion expirada', clase: 'warn' },
+  activa: { texto: 'Conectado', clase: 'ok' },
+  expirada: { texto: 'Sesion vencida', clase: 'warn' },
+  incompleta: { texto: 'Cookies incompletas', clase: 'warn' },
+  ilegible: { texto: 'Clave distinta', clase: 'err' },
   sin_sesion: { texto: 'Sin sesion', clase: 'neutro' },
 };
 
@@ -153,12 +155,28 @@ export function renderConexiones(conexiones) {
   }
   return conexiones.map((c) => {
     const etiqueta = ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
-    return '<article class="card">' +
-      '<div class="card-cab"><h3>' + esc(NOMBRES_PLATAFORMA[c.plataforma] || c.plataforma) + '</h3>' + badge(etiqueta) + '</div>' +
+    const nombre = NOMBRES_PLATAFORMA[c.plataforma] || c.plataforma;
+    const conSesion = c.estado !== 'sin_sesion';
+    const plat = esc(c.plataforma);
+    return '<article class="card" data-plataforma="' + plat + '">' +
+      '<div class="card-cab"><h3>' + esc(nombre) + '</h3>' + badge(etiqueta) + '</div>' +
       '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || 'sin vincular') + '</span>' +
+      (c.cookies ? '<span>Cookies: ' + esc(c.cookies) + '</span>' : '') +
+      (c.venceEn ? '<span>Vence: ' + esc(formatoFecha(c.venceEn)) + '</span>' : '') +
       '<span>Ultima verificacion: ' + esc(formatoFecha(c.ultimaVerificacion)) + '</span></div>' +
+      (c.detalle && c.estado !== 'sin_sesion' && c.estado !== 'activa' ? '<div class="meta"><span>' + esc(c.detalle) + '</span></div>' : '') +
+      '<div class="card-acciones">' +
+        '<button class="btn btn-primario" type="button" data-red-accion="vincular" data-plataforma="' + plat + '">' +
+          (conSesion ? 'Reemplazar sesion' : 'Vincular cuenta') + '</button>' +
+        (conSesion ? '<button class="btn" type="button" data-red-accion="verificar" data-plataforma="' + plat + '">Verificar</button>' +
+          '<button class="btn" type="button" data-red-accion="quitar" data-plataforma="' + plat + '">Quitar</button>' : '') +
+      '</div>' +
     '</article>';
   }).join('');
+}
+
+export function nombrePlataforma(plataforma) {
+  return NOMBRES_PLATAFORMA[plataforma] || plataforma;
 }
 
 export function renderLotes(lotes) {

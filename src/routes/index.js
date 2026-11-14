@@ -3,6 +3,7 @@ import healthRoutes from './health.js';
 import statusRoutes from './status.js';
 import panelRoutes from './panel.js';
 import sesionRoutes from './sesion.js';
+import redesRoutes from './redes.js';
 
 const router = Router();
 
@@ -11,13 +12,14 @@ router.get('/api', (req, res) => {
     ok: true,
     name: 'ClipLab Pro API',
     version: '0.3.0',
-    endpoints: ['/health', '/api/status', '/api/panel/estado', '/api/panel/encolar', '/api/panel/sesion'],
+    endpoints: ['/health', '/api/status', '/api/panel/estado', '/api/panel/encolar', '/api/panel/sesion', '/api/panel/redes'],
   });
 });
 
 router.use(healthRoutes);
 router.use('/api', statusRoutes);
 router.use('/api/panel/sesion', sesionRoutes);
+router.use('/api/panel/redes', redesRoutes);
 router.use('/api/panel', panelRoutes);
 
 export default router;
