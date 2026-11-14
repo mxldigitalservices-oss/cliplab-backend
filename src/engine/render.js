@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config/index.js';
-import { run } from '../utils/run.js';
+import { run, resumirStderr } from '../utils/run.js';
 
 const MODOS = new Set(['recorte', 'blur']);
 const RUTA_SEGURA = /^[A-Za-z0-9_\/.\-]+$/;
@@ -99,7 +99,9 @@ export async function renderizarClip(opciones) {
   } catch (error) {
     await fs.rm(salida, { force: true });
     const detalle = String(error.stderr || '').trim().split('\n').filter(Boolean).pop();
-    throw new Error('Fallo el render: ' + (detalle || error.message));
+    const fallo = new Error('Fallo el render: ' + (detalle || error.message));
+    fallo.detalle = resumirStderr(error.stderr);
+    throw fallo;
   }
 
   if (onProgreso) onProgreso(1);

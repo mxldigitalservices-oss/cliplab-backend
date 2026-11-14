@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test tests/sesion.test.js"
+    "test": "node --test tests/sesion.test.js tests/envelope.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

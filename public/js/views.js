@@ -192,6 +192,7 @@ export function renderIncidencias(incidencias, ocultarResueltas) {
       '<div class="meta"><span>Origen: ' + esc(i.origen || 'sistema') + '</span>' +
       '<span>' + esc(formatoFecha(i.creadoEn)) + '</span>' +
       '<span>' + (i.resuelta ? 'Resuelta' : 'Abierta') + '</span></div>' +
+      (i.detalle ? '<details class="detalle"><summary>Ver detalle tecnico</summary><pre>' + esc(i.detalle) + '</pre></details>' : '') +
     '</div>';
   }).join('');
 }

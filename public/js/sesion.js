@@ -46,6 +46,9 @@ async function pedir(metodo, sub = '', cuerpo) {
   if (!respuesta.ok) {
     throw new Error((datos && datos.error) || 'Error ' + respuesta.status);
   }
+  if (datos && typeof datos === 'object' && 'success' in datos) {
+    return { ok: true, ...(datos.data || {}) };
+  }
   return datos;
 }
 

@@ -3,6 +3,12 @@ import { spawn } from 'node:child_process';
 const MAX_STDOUT = 1024 * 1024;
 const MAX_STDERR = 16 * 1024;
 
+/** Ultimas lineas utiles de stderr (max. ~1500 caracteres) para guardarlas como detalle tecnico. */
+export function resumirStderr(stderr, max = 1500) {
+  const texto = String(stderr || '').split('\n').map((l) => l.trimEnd()).filter(Boolean).slice(-15).join('\n');
+  return texto.length > max ? '...' + texto.slice(-max) : texto;
+}
+
 export class ComandoError extends Error {
   constructor(mensaje, detalle = {}) {
     super(mensaje);

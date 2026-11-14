@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
-import { run, ComandoError } from '../utils/run.js';
+import { run, ComandoError, resumirStderr } from '../utils/run.js';
 import { parsearUrlYoutube } from '../utils/youtube.js';
 import { conSesion, renovar, esBloqueoAntiBot } from '../sesion/gestor.js';
 
@@ -11,20 +11,26 @@ const FORMATO_RESPALDO = 'best/b';
 const TIMEOUT_MS = 20 * 60 * 1000;
 const PREFIJO_PROGRESO = 'PROGRESO';
 
+function conDetalle(mensaje, stderr) {
+  const err = new Error(mensaje);
+  err.detalle = resumirStderr(stderr);
+  return err;
+}
+
 function explicarError(error, trasRenovar) {
   if (!(error instanceof ComandoError)) return error;
   const stderr = String(error.stderr || '');
   if (esBloqueoAntiBot(stderr)) {
     if (trasRenovar && trasRenovar.estado === 'sin_sesion') {
-      return new Error('YouTube pidio verificacion anti-bot y no hay sesion guardada. Importa cookies en /sesion.html.');
+      return conDetalle('YouTube pidio verificacion anti-bot y no hay sesion guardada. Importa cookies en /sesion.html.', stderr);
     }
     if (trasRenovar) {
-      return new Error('YouTube siguio pidiendo verificacion anti-bot tras renovar la sesion. Importa cookies frescas en /sesion.html.');
+      return conDetalle('YouTube siguio pidiendo verificacion anti-bot tras renovar la sesion. Importa cookies frescas en /sesion.html.', stderr);
     }
-    return new Error('YouTube pidio verificacion anti-bot. Importa cookies en /sesion.html.');
+    return conDetalle('YouTube pidio verificacion anti-bot. Importa cookies en /sesion.html.', stderr);
   }
   const detalle = stderr.trim().split('\n').filter(Boolean).pop() || error.message;
-  return new Error('Fallo la descarga: ' + detalle);
+  return conDetalle('Fallo la descarga: ' + detalle, stderr);
 }
 
 export async function descargarVideo(url, directorio, opciones = {}) {

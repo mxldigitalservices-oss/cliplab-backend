@@ -98,8 +98,13 @@ async function solicitar(ruta, opciones = {}) {
     datos = null;
   }
 
-  if (!respuesta.ok) {
+  if (!respuesta.ok || (datos && datos.success === false)) {
     throw new ApiError((datos && datos.error) || 'Error ' + respuesta.status, respuesta.status);
+  }
+
+  // Respuesta estandar { success, data, error }: el resto del panel sigue recibiendo { ok, ...campos }.
+  if (datos && typeof datos === 'object' && 'success' in datos) {
+    return { ok: true, ...(datos.data || {}) };
   }
 
   return datos;

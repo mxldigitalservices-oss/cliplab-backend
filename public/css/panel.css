@@ -105,3 +105,7 @@ dialog input { width: 100%; margin: 8px 0 12px; }
 .mk-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .mk-texto { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; color: #cfd6e2; }
 .chip.mk-ok { border-color: var(--ok); color: #7ee2a0; }
+
+.detalle { margin-top: 6px; font-size: 12px; color: #9aa4b5; }
+.detalle summary { cursor: pointer; }
+.detalle pre { margin: 6px 0 0; padding: 8px 10px; background: var(--sf2); border-radius: 8px; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }

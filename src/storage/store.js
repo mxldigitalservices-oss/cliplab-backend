@@ -68,12 +68,13 @@ function completar(id, campos) {
   return actualizar(id, { ...campos, estado: 'listo', etapa: 'Listo', progreso: 100 });
 }
 
-function registrarIncidencia(nivel, mensaje, origen) {
+function registrarIncidencia(nivel, mensaje, origen, detalle) {
   const incidencia = {
     id: nuevoId('inc'),
     nivel,
     mensaje,
     origen: origen || 'sistema',
+    detalle: detalle || null,
     resuelta: false,
     creadoEn: ahora(),
   };
@@ -82,10 +83,10 @@ function registrarIncidencia(nivel, mensaje, origen) {
   return incidencia;
 }
 
-function fallar(id, mensaje) {
+function fallar(id, mensaje, detalle) {
   const clip = actualizar(id, { estado: 'error', etapa: 'Error' });
   const nombre = clip ? clip.titulo : id;
-  registrarIncidencia('error', 'Clip "' + nombre + '": ' + mensaje, 'cola');
+  registrarIncidencia('error', 'Clip "' + nombre + '": ' + mensaje, 'cola', detalle);
   return clip;
 }
 

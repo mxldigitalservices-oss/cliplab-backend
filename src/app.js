@@ -4,6 +4,7 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './config/index.js';
 import routes from './routes/index.js';
+import { envelope } from './middleware/envelope.js';
 import { notFound } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -21,6 +22,7 @@ export function createApp() {
 
   app.use('/clips', express.static(config.clipsDir, { index: false, dotfiles: 'ignore', maxAge: '1d' }));
   app.use(express.static(publicDir, { etag: true }));
+  app.use('/api', envelope);
   app.use(routes);
 
   app.use(notFound);
