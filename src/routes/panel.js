@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { guardarSesionRed } = require('../sesiones');
 
 function verificarMasterKey(req, res, next) {
   const masterKey = req.headers['x-master-key'];
@@ -12,6 +13,7 @@ function verificarMasterKey(req, res, next) {
 router.post('/redes/tiktok', verificarMasterKey, async (req, res) => {
   try {
     const cookiesData = req.body;
+    await guardarSesionRed('tiktok', cookiesData);
     return res.json({ success: true, message: 'Sesión de TikTok guardada y cifrada correctamente' });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
