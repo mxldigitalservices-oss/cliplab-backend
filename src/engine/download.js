@@ -31,26 +31,45 @@ function explicarError(error, trasRenovar) {
   }
 
   if (FORMATO_NO_DISPONIBLE.test(stderr)) {
-    return new Error('YouTube no ofrecio ningun formato descargable para este video (yt-dlp desactualizado o formatos restringidos). Revisa en los logs la entrada "Formatos disponibles".');
+    return new Error('YouTube no ofrecio ningun formato descargable para este video (yt-dlp desactualizado o formatos restringidos). Revisa en los logs las entradas "Formatos disponibles" y "Diagnostico de yt-dlp".');
   }
 
   const detalle = stderr.trim().split('\n').filter(Boolean).pop() || error.message;
   return new Error('Fallo la descarga: ' + detalle);
 }
 
+const RELEVANTE = /(jsc|JS runtimes?|challenge|SABR|Only images|yt-dlp version|PO ?Token|Signature solving|remote components)/i;
+
+// Argumentos extra opcionales, p. ej. YTDLP_EXTRA_ARGS="--remote-components ejs:github"
+function argumentosExtra() {
+  return String(process.env.YTDLP_EXTRA_ARGS || '').split(/\s+/).filter(Boolean);
+}
+
+export async function diagnosticarFormatos(url, signal) {
+  const avisos = [];
+  const resultado = await conSesion((rutaCookies) => {
+    const args = [
+      '--no-colors', '--no-playlist', '-v',
+      '--js-runtimes', 'node', '--socket-timeout', '20', ...argumentosExtra(), '--list-formats',
+    ];
+    if (rutaCookies) args.push('--cookies', rutaCookies);
+    args.push('--', url);
+    return run(config.ytdlpPath, args, {
+      timeoutMs: TIMEOUT_DIAGNOSTICO_MS,
+      signal,
+      onStderrLine: (linea) => {
+        if (RELEVANTE.test(linea) && avisos.length < 40) avisos.push(linea.slice(0, 300));
+      },
+    });
+  });
+  return { formatos: resultado.stdout.split('\n').filter(Boolean).slice(0, 40), avisos };
+}
+
 async function registrarFormatos(url, signal) {
   try {
-    const resultado = await conSesion((rutaCookies) => {
-      const args = [
-        '--no-warnings', '--no-colors', '--no-playlist',
-        '--js-runtimes', 'node', '--socket-timeout', '20', '--list-formats',
-      ];
-      if (rutaCookies) args.push('--cookies', rutaCookies);
-      args.push('--', url);
-      return run(config.ytdlpPath, args, { timeoutMs: TIMEOUT_DIAGNOSTICO_MS, signal });
-    });
-    const lineas = resultado.stdout.split('\n').filter(Boolean).slice(0, 60);
-    logger.warn('Formatos disponibles', { lineas });
+    const { formatos, avisos } = await diagnosticarFormatos(url, signal);
+    logger.warn('Formatos disponibles', { lineas: formatos });
+    logger.warn('Diagnostico de yt-dlp (JS runtime, retos, SABR)', { avisos });
   } catch (error) {
     const detalle = String(error.stderr || error.message || '').trim().split('\n').filter(Boolean).pop();
     logger.warn('No se pudo listar los formatos', { detalle });
@@ -83,6 +102,8 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     '-o', path.join(directorio, '%(id)s.%(ext)s'),
     '--print', 'after_move:%(id)s|%(duration)s|%(filepath)s|%(title)s',
   ];
+
+  base.push(...argumentosExtra());
 
   if (path.isAbsolute(config.ffmpegPath)) {
     base.push('--ffmpeg-location', config.ffmpegPath);

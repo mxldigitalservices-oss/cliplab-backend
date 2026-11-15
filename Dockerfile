@@ -38,7 +38,7 @@ RUN echo "yt-dlp refresh ${YTDLP_CACHE_BUST}" \
     && chmod 0755 /usr/local/bin/yt-dlp
 
 # ---------- Etapa 2: imagen final ----------
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-dejavu-core \
