@@ -15,3 +15,7 @@ venv/
 venv/
 venv/
 venv/
+=*
+requirements.txt
+*.zip
+aplicar-*.sh
