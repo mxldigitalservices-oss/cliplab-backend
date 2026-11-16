@@ -12,3 +12,4 @@ cookies.txt
 *.tar.gz
 sesion-datos/
 cliplab-backend/
+venv/
