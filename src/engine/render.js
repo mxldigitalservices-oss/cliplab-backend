@@ -3,6 +3,7 @@ import path from 'node:path';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { run, stderrCompleto } from '../utils/run.js';
+import { analizarCortes, filtroSplit, xRostro } from './sujeto.js';
 
 const MODOS = new Set(['recorte', 'blur']);
 const RUTA_SEGURA = /^[A-Za-z0-9_\/.\-]+$/;
@@ -70,14 +71,16 @@ function construirFiltro({ modo, subtitulos, fontsDir, logo, cortes }) {
       const w = Math.round((ANCHO * zoom) / 2) * 2;
       const h = Math.round((ALTO * zoom) / 2) * 2;
       let video = '[0:v]trim=' + t + ',setpts=PTS-STARTPTS,';
-      if (modo === 'blur') {
+      if (c.sujeto && c.sujeto.split) {
+        video += filtroSplit(i, c.sujeto, ANCHO, ALTO);
+      } else if (modo === 'blur') {
         video += 'split=2[a' + i + '][b' + i + '];' +
           '[a' + i + ']scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,scale=' + ANCHO + ':' + ALTO + '[f' + i + '];' +
           '[b' + i + ']scale=w=' + ANCHO + ':h=' + ALTO + ':force_original_aspect_ratio=decrease:force_divisible_by=2[g' + i + '];' +
           '[f' + i + '][g' + i + ']overlay=(W-w)/2:(H-h)/2,setsar=1[v' + i + ']';
       } else {
         video += 'scale=' + w + ':' + h + ':force_original_aspect_ratio=increase,' +
-          'crop=' + ANCHO + ':' + ALTO + ':(in_w-out_w)/2:(in_h-out_h)/2,setsar=1[v' + i + ']';
+          'crop=' + ANCHO + ':' + ALTO + ':' + xRostro(c.sujeto) + ':(in_h-out_h)/2,setsar=1[v' + i + ']';
       }
       partes.push(video);
       partes.push('[0:a]atrim=' + t + ',asetpts=PTS-STARTPTS,afade=t=in:d=0.02,afade=t=out:st=' + Math.max(0, c.hasta - c.desde - 0.02).toFixed(3) + ':d=0.02[a' + i + 'x]');
@@ -155,7 +158,8 @@ export async function renderizarClip(opciones) {
   const fontsDir = (await existe(config.fontsDir)) ? path.resolve(config.fontsDir) : null;
   const logo = await resolverLogo(opcionLogo);
   const logoOmitido = opcionLogo === undefined && config.logoEnabled && !logo;
-  const filtro = construirFiltro({ modo, subtitulos: rutaAss, fontsDir, logo, cortes });
+  const cortesRostro = await analizarCortes(entrada, cortes, desde);
+  const filtro = construirFiltro({ modo, subtitulos: rutaAss, fontsDir, logo, cortes: cortesRostro });
   const hilos = String(config.cpuThreads);
 
   // Orden importante: -ss/-i del video, luego -i del logo y despues las opciones de salida (-t, -map...).
