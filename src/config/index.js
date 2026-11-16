@@ -61,6 +61,13 @@ export const config = Object.freeze({
   segmentMaxSeconds: Math.max(toInt(process.env.SEGMENT_MIN_SECONDS, 30), toInt(process.env.SEGMENT_MAX_SECONDS, 60)),
   segmentsMin: Math.max(1, toInt(process.env.SEGMENTS_MIN, 4)),
   segmentsMax: Math.max(1, toInt(process.env.SEGMENTS_MAX, 5)),
+  // Edicion con ritmo: cortes a frases completas, pausas eliminadas y alternancia de planos (medio / cerrado).
+  editorialEnabled: process.env.EDITORIAL !== 'off',
+  editorialPad: Math.max(0, toInt(process.env.EDITORIAL_PAD_SECONDS, 8)),
+  hotCutGap: Number(process.env.HOT_CUT_GAP) > 0 ? Number(process.env.HOT_CUT_GAP) : 0.45,
+  hotCutPad: Number(process.env.HOT_CUT_PAD) >= 0 && process.env.HOT_CUT_PAD ? Number(process.env.HOT_CUT_PAD) : 0.1,
+  beatSeconds: Number(process.env.BEAT_SECONDS) > 0 ? Number(process.env.BEAT_SECONDS) : 3.6,
+  punchZoom: Math.min(1.4, Math.max(1, Number(process.env.PUNCH_ZOOM) || 1.14)),
   dataDir: process.env.DATA_DIR || (volumen ? path.join(volumen, 'datos') : path.join(tmpDir, 'datos')),
 
   sessionDir: process.env.SESSION_DIR || (volumen ? path.join(volumen, 'sesion') : path.join(tmpDir, 'sesion-datos')),

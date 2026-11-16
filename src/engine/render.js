@@ -50,7 +50,7 @@ function posicionLogo(posicion, margen) {
 }
 
 // Cadena de etapas: base (9:16) -> logo (opcional) -> subtitulos (opcional). La ultima etapa se llama [v].
-function construirFiltro({ modo, subtitulos, fontsDir, logo }) {
+function construirFiltro({ modo, subtitulos, fontsDir, logo, cortes }) {
   const salidas = ['base'];
   if (logo) salidas.push('marca');
   if (subtitulos) salidas.push('subs');
@@ -61,7 +61,30 @@ function construirFiltro({ modo, subtitulos, fontsDir, logo }) {
   const entrada = () => '[' + salidas[n - 1] + ']';
   const partes = [];
 
-  if (modo === 'blur') {
+  if (cortes && cortes.length > 0) {
+    // Edicion con ritmo: cada tramo se recorta, se encuadra (medio o cerrado) y todo se concatena.
+    const etiquetas = [];
+    cortes.forEach((c, i) => {
+      const t = 'start=' + c.desde.toFixed(3) + ':end=' + c.hasta.toFixed(3);
+      const zoom = modo === 'recorte' && c.plano === 'cerrado' ? config.punchZoom : 1;
+      const w = Math.round((ANCHO * zoom) / 2) * 2;
+      const h = Math.round((ALTO * zoom) / 2) * 2;
+      let video = '[0:v]trim=' + t + ',setpts=PTS-STARTPTS,';
+      if (modo === 'blur') {
+        video += 'split=2[a' + i + '][b' + i + '];' +
+          '[a' + i + ']scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,scale=' + ANCHO + ':' + ALTO + '[f' + i + '];' +
+          '[b' + i + ']scale=w=' + ANCHO + ':h=' + ALTO + ':force_original_aspect_ratio=decrease:force_divisible_by=2[g' + i + '];' +
+          '[f' + i + '][g' + i + ']overlay=(W-w)/2:(H-h)/2,setsar=1[v' + i + ']';
+      } else {
+        video += 'scale=' + w + ':' + h + ':force_original_aspect_ratio=increase,' +
+          'crop=' + ANCHO + ':' + ALTO + ':(in_w-out_w)/2:(in_h-out_h)/2,setsar=1[v' + i + ']';
+      }
+      partes.push(video);
+      partes.push('[0:a]atrim=' + t + ',asetpts=PTS-STARTPTS,afade=t=in:d=0.02,afade=t=out:st=' + Math.max(0, c.hasta - c.desde - 0.02).toFixed(3) + ':d=0.02[a' + i + 'x]');
+      etiquetas.push('[v' + i + '][a' + i + 'x]');
+    });
+    partes.push(etiquetas.join('') + 'concat=n=' + cortes.length + ':v=1:a=1' + salida() + '[audio]');
+  } else if (modo === 'blur') {
     partes.push('[0:v]split=2[a][b]');
     partes.push('[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,scale=' + ANCHO + ':' + ALTO + '[fondo]');
     partes.push('[b]scale=w=' + ANCHO + ':h=' + ALTO + ':force_original_aspect_ratio=decrease:force_divisible_by=2[frente]');
@@ -115,10 +138,11 @@ async function medirSalida(ruta) {
 }
 
 export async function renderizarClip(opciones) {
-  const { entrada, salida, inicio = 0, duracion, subtitulos = null, modo = 'recorte', onProgreso, signal, logo: opcionLogo } = opciones;
+  const { entrada, salida, inicio = 0, duracion, subtitulos = null, modo = 'recorte', onProgreso, signal, logo: opcionLogo, cortes = null } = opciones;
 
   const desde = Number(inicio);
   const largo = Math.min(Number(duracion), config.maxClipSeconds);
+  const largoSalida = cortes && cortes.length > 0 ? cortes.reduce((suma, c) => suma + (c.hasta - c.desde), 0) : largo;
 
   if (!Number.isFinite(desde) || desde < 0) throw new Error('Inicio de clip invalido');
   if (!Number.isFinite(largo) || largo <= 0) throw new Error('Duracion de clip invalida');
@@ -131,7 +155,7 @@ export async function renderizarClip(opciones) {
   const fontsDir = (await existe(config.fontsDir)) ? path.resolve(config.fontsDir) : null;
   const logo = await resolverLogo(opcionLogo);
   const logoOmitido = opcionLogo === undefined && config.logoEnabled && !logo;
-  const filtro = construirFiltro({ modo, subtitulos: rutaAss, fontsDir, logo });
+  const filtro = construirFiltro({ modo, subtitulos: rutaAss, fontsDir, logo, cortes });
   const hilos = String(config.cpuThreads);
 
   // Orden importante: -ss/-i del video, luego -i del logo y despues las opciones de salida (-t, -map...).
@@ -141,7 +165,7 @@ export async function renderizarClip(opciones) {
     ...(logo ? ['-i', logo] : []),
     '-t', String(largo),
     '-filter_complex', filtro,
-    '-map', '[v]', '-map', '0:a:0?',
+    '-map', '[v]', ...(cortes && cortes.length > 0 ? ['-map', '[audio]'] : ['-map', '0:a:0?']),
     '-c:v', 'libx264', '-preset', config.videoPreset, '-crf', String(config.videoCrf),
     '-maxrate', '5000k', '-bufsize', '10000k',
     '-pix_fmt', 'yuv420p', '-fpsmax', '30',
@@ -155,7 +179,7 @@ export async function renderizarClip(opciones) {
   const alLinea = (linea) => {
     const coincidencia = /^out_time_(?:us|ms)=(\d+)$/.exec(linea);
     if (!coincidencia || !onProgreso) return;
-    const fraccion = Math.min(1, Number(coincidencia[1]) / 1e6 / largo);
+    const fraccion = Math.min(1, Number(coincidencia[1]) / 1e6 / largoSalida);
     if (fraccion - ultimo >= 0.02) {
       ultimo = fraccion;
       onProgreso(fraccion);
@@ -187,7 +211,7 @@ export async function renderizarClip(opciones) {
   return {
     archivo: salida,
     bytes: info.size,
-    duracion: medido.duracion || largo,
+    duracion: medido.duracion || largoSalida,
     ancho: medido.ancho || null,
     alto: medido.alto || null,
     conLogo: Boolean(logo),

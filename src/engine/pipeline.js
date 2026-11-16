@@ -10,6 +10,7 @@ import { escribirAss } from './subtitles.js';
 import { renderizarClip } from './render.js';
 import { planificarSegmentos, leerHistorial, registrarPasada } from './segmentos.js';
 import { generarMarketing } from './marketing.js';
+import { ajustarAFrases, cortesEnCaliente, planDePlanos } from './editorial.js';
 import { detalleDeError } from '../utils/run.js';
 
 let avisoLogo = false;
@@ -91,13 +92,43 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
     // Transcripcion (30-55 %)
     let marca = Date.now();
     avanzar('Transcribiendo audio', 30);
-    const palabras = await transcribirAudio(video.archivo, dirSegmento, {
-      inicio,
-      duracion,
+    // Con criterio editorial se transcribe una ventana con colchon para poder arrancar y cerrar en frases completas.
+    const editorial = config.editorialEnabled && Boolean(video.duracion);
+    const base = editorial ? Math.max(0, inicio - config.editorialPad) : inicio;
+    const largoVentana = editorial
+      ? Math.min(Math.min(video.duracion, inicio + duracion + config.editorialPad) - base, config.maxClipSeconds)
+      : duracion;
+    const palabrasVentana = await transcribirAudio(video.archivo, dirSegmento, {
+      inicio: base,
+      duracion: largoVentana,
       signal,
       onProgreso: (fraccion) => avanzar('Transcribiendo audio', 30 + fraccion * 25),
     });
     registrarTiempo(clipId, 'transcripcion', marca);
+
+    let palabras = palabrasVentana;
+    let cortes = null;
+    let inicioReal = inicio;
+    if (editorial && palabrasVentana.length >= 3) {
+      const ajuste = ajustarAFrases(palabrasVentana, {
+        objetivoInicio: inicio - base,
+        objetivoFin: inicio - base + duracion,
+        minSeg: Math.min(config.segmentMinSeconds, duracion),
+        maxSeg: Math.min(config.maxClipSeconds - 2, config.segmentMaxSeconds + config.editorialPad),
+      });
+      const caliente = cortesEnCaliente(palabrasVentana, { desde: ajuste.inicio, hasta: Math.min(ajuste.fin, largoVentana) });
+      if (caliente.tramos.length > 0) {
+        cortes = planDePlanos(caliente.tramos, palabrasVentana);
+        palabras = caliente.palabras;
+        inicioReal = base + ajuste.inicio;
+        logger.info('Plan editorial', {
+          id: clipId,
+          ajustadoAFrases: ajuste.ajustado,
+          beats: cortes.length,
+          pausasEliminadasSeg: Math.round(caliente.eliminado * 10) / 10,
+        });
+      }
+    }
 
     // Subtitulos (55-60 %)
     avanzar('Generando subtitulos', 56);
@@ -118,10 +149,11 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
     const resultado = await renderizarClip({
       entrada: video.archivo,
       salida,
-      inicio,
-      duracion,
+      inicio: cortes ? base : inicio,
+      duracion: cortes ? largoVentana : duracion,
       subtitulos,
       modo: trabajo.modo,
+      cortes,
       signal,
       onProgreso: (fraccion) => avanzar('Renderizando 9:16', 60 + fraccion * 37),
     });
@@ -158,7 +190,7 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
       ancho: resultado.ancho,
       alto: resultado.alto,
       modo: trabajo.modo,
-      inicio,
+      inicio: inicioReal,
       conLogo: resultado.conLogo,
       transcripcion,
       marketing,
