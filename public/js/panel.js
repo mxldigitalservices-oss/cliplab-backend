@@ -1,4 +1,4 @@
-import { obtenerEstado, encolarVideo, leerLlave, guardarLlave } from './api.js';
+import { obtenerEstado, encolarVideo, obtenerIncidencia, guardarCookiesRed, quitarCookiesRed, leerLlave, guardarLlave } from './api.js';
 import * as V from './views.js';
 
 const INTERVALO_MS = 4000;
@@ -21,7 +21,11 @@ const estado = {
   controlador: null,
   temporizadorAviso: null,
   temporizadorBusqueda: null,
+  incAbiertas: new Set(),
+  incTextos: new Map(),
 };
+
+const contextoIncidencias = () => ({ abiertas: estado.incAbiertas, textos: estado.incTextos });
 
 /* ---------- Indicadores y avisos ---------- */
 
@@ -89,7 +93,7 @@ function renderActual() {
       $('lista-lotes').innerHTML = V.renderLotes(estado.datos.lotes);
       break;
     case 'incidencias':
-      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas);
+      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas, contextoIncidencias());
       break;
     case 'marketing':
       $('marketing').innerHTML = V.renderMarketing(estado.datos.clips);
@@ -160,8 +164,13 @@ async function sondear() {
 
     const firma = JSON.stringify([datos.resumen, datos.conexiones, datos.lotes, datos.incidencias, datos.clips]);
     if (firma !== estado.firma) {
-      estado.firma = firma;
-      renderActual();
+      try {
+        renderActual();
+        estado.firma = firma; // solo se da por pintado si el render no fallo: se reintenta en el siguiente sondeo
+      } catch (errorRender) {
+        console.error('Error al pintar el panel', errorRender);
+        mostrarAviso('No se pudo pintar la pestana: ' + errorRender.message, 'error', 6000);
+      }
     }
 
     if ($('aviso').dataset.tipo === 'error') $('aviso').hidden = true;
@@ -280,10 +289,119 @@ function iniciarCopiar() {
     if (!boton || !estado.datos) return;
     const clip = estado.datos.clips.find((c) => c.id === boton.dataset.copiar);
     if (!clip) return;
-    const texto = [clip.copy, clip.cta].filter(Boolean).join('\n\n');
+    const titulo = clip.marketing && clip.marketing.titulo;
+    const texto = [titulo, clip.copy, clip.cta].filter(Boolean).join('\n\n');
     const copiado = await copiarTexto(texto);
     mostrarAviso(copiado ? 'Copy copiado al portapapeles.' : 'No se pudo copiar el texto.', copiado ? 'ok' : 'error');
   });
+}
+
+/* ---------- Conexiones: pegar cookies de Cookie Editor ---------- */
+
+let redActual = null;
+
+function cerrarRed() {
+  $('dlg-red').close();
+  $('input-cookies').value = '';
+  $('red-error').hidden = true;
+  redActual = null;
+}
+
+function iniciarCookiesRedes() {
+  $('lista-conexiones').addEventListener('click', async (evento) => {
+    const boton = evento.target.closest('[data-red-accion]');
+    if (!boton) return;
+    const red = boton.dataset.red;
+    const nombre = V.nombrePlataforma(red);
+
+    if (boton.dataset.redAccion === 'pegar') {
+      redActual = red;
+      $('red-titulo').textContent = 'Pegar cookies de ' + nombre;
+      $('red-pasos').textContent = 'Abre ' + nombre + ' con tu sesion iniciada, abre Cookie Editor, pulsa Exportar, elige JSON y pegalo aqui. Se guardan cifradas en el servidor.';
+      $('red-error').hidden = true;
+      $('dlg-red').showModal();
+      $('input-cookies').focus();
+      return;
+    }
+
+    if (!window.confirm('Quitar la sesion de ' + nombre + '? Se borran las cookies guardadas.')) return;
+    boton.disabled = true;
+    try {
+      await quitarCookiesRed(red);
+      mostrarAviso('Sesion de ' + nombre + ' eliminada.', 'info');
+      sondearYa();
+    } catch (error) {
+      if (error.status === 401) abrirLlave();
+      mostrarAviso(error.message, 'error', 6000);
+    } finally {
+      boton.disabled = false;
+    }
+  });
+
+  $('red-cancelar').addEventListener('click', cerrarRed);
+
+  $('form-red').addEventListener('submit', async (evento) => {
+    evento.preventDefault();
+    if (!redActual) return;
+    const valor = $('input-cookies').value.trim();
+    if (!valor) {
+      $('red-error').textContent = 'Pega primero el JSON exportado por Cookie Editor.';
+      $('red-error').hidden = false;
+      return;
+    }
+    const boton = $('red-guardar');
+    boton.disabled = true;
+    $('red-error').hidden = true;
+    try {
+      const nombre = V.nombrePlataforma(redActual);
+      const r = await guardarCookiesRed(redActual, valor);
+      cerrarRed();
+      mostrarAviso(nombre + ' conectado (' + r.total + ' cookies guardadas cifradas).', 'ok', 6000);
+      sondearYa();
+    } catch (error) {
+      if (error.status === 401) {
+        cerrarRed();
+        abrirLlave();
+      } else {
+        $('red-error').textContent = error.message;
+        $('red-error').hidden = false;
+      }
+    } finally {
+      boton.disabled = false;
+    }
+  });
+}
+
+/* ---------- Incidencias: stderr completo bajo demanda ---------- */
+
+function iniciarIncidencias() {
+  // 'toggle' no burbujea: se escucha en captura. Se recuerda que detalles estan abiertos y su texto
+  // para que el repintado periodico no los cierre ni pierda el stderr ya descargado.
+  document.addEventListener('toggle', async (evento) => {
+    const detalles = evento.target;
+    if (!(detalles instanceof HTMLDetailsElement) || !detalles.dataset.inc) return;
+    const id = detalles.dataset.inc;
+
+    if (!detalles.open) {
+      estado.incAbiertas.delete(id);
+      return;
+    }
+    estado.incAbiertas.add(id);
+    if (estado.incTextos.has(id)) return;
+
+    const pre = detalles.querySelector('pre');
+    const previo = pre ? pre.textContent : '';
+    if (pre) pre.textContent = 'Cargando stderr completo...';
+    try {
+      const { incidencia } = await obtenerIncidencia(id);
+      const texto = (incidencia && incidencia.detalle) || previo || '(sin detalle)';
+      estado.incTextos.set(id, texto);
+      if (pre) pre.textContent = texto;
+    } catch (error) {
+      if (pre) pre.textContent = previo;
+      mostrarAviso('No se pudo cargar el detalle: ' + error.message, 'error', 5000);
+    }
+  }, true);
 }
 
 /* ---------- Filtros ---------- */
@@ -306,7 +424,7 @@ function iniciarFiltros() {
   $('inc-ocultar').addEventListener('change', (evento) => {
     estado.ocultarResueltas = evento.target.checked;
     if (estado.datos) {
-      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas);
+      $('lista-incidencias').innerHTML = V.renderIncidencias(estado.datos.incidencias, estado.ocultarResueltas, contextoIncidencias());
     }
   });
 }
@@ -331,6 +449,8 @@ function iniciar() {
   iniciarLlave();
   iniciarEncolar();
   iniciarCopiar();
+  iniciarIncidencias();
+  iniciarCookiesRedes();
   iniciarFiltros();
   actualizarBotonLlave();
 

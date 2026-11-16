@@ -5,11 +5,21 @@ import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
 import { verificarHerramientas } from './engine/herramientas.js';
 import { detenerCola } from './engine/cola.js';
+import { iniciarVigilancia, detenerVigilancia } from './sesion/gestor.js';
+import { sincronizarCookiesRedes } from './sesion/cookiesRedes.js';
+import { store } from './storage/store.js';
+import { detalleDeError } from './utils/run.js';
 
 async function main() {
   await fs.mkdir(config.tmpDir, { recursive: true });
   await fs.mkdir(config.clipsDir, { recursive: true });
   await fs.rm(path.join(config.tmpDir, 'jobs'), { recursive: true, force: true });
+  // Cookies descifradas que pudieron quedar de una ejecucion anterior interrumpida.
+  await fs.rm(path.join(config.tmpDir, 'sesion'), { recursive: true, force: true });
+
+  if (!config.sessionKey) {
+    logger.warn('Sin SESSION_KEY ni MASTER_KEY: no se podra guardar la sesion de YouTube');
+  }
 
   const herramientas = await verificarHerramientas();
   for (const [nombre, estado] of Object.entries(herramientas)) {
@@ -28,6 +38,8 @@ async function main() {
       port: config.port,
       env: config.env,
     });
+    iniciarVigilancia();
+    sincronizarCookiesRedes().catch((error) => logger.warn('No se restauraron las sesiones de redes', { mensaje: error.message }));
   });
 
   let shuttingDown = false;
@@ -36,6 +48,7 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info('Senal recibida, cerrando servidor', { signal });
+    detenerVigilancia();
     detenerCola();
 
     server.close((error) => {
@@ -57,11 +70,14 @@ async function main() {
   process.on('SIGINT', () => shutdown('SIGINT'));
 
   process.on('unhandledRejection', (reason) => {
-    logger.error('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason)));
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    logger.error('unhandledRejection', error);
+    store.registrarIncidencia('error', 'Promesa rechazada sin controlar: ' + error.message, 'proceso', detalleDeError(error));
   });
 
   process.on('uncaughtException', (error) => {
     logger.error('uncaughtException', error);
+    store.registrarIncidencia('error', 'Excepcion no controlada: ' + error.message, 'proceso', detalleDeError(error));
     shutdown('uncaughtException');
   });
 }

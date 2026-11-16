@@ -1,4 +1,4 @@
-// Perfil de navegador compartido por el servidor y por scripts/login-local.js (sin dependencias).
+// Perfil de navegador compartido por el agente (sin dependencias).
 export const PERFIL = {
   viewport: { width: 1366, height: 850 },
   locale: "es-DO",

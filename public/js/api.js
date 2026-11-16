@@ -98,8 +98,13 @@ async function solicitar(ruta, opciones = {}) {
     datos = null;
   }
 
-  if (!respuesta.ok) {
+  if (!respuesta.ok || (datos && datos.success === false)) {
     throw new ApiError((datos && datos.error) || 'Error ' + respuesta.status, respuesta.status);
+  }
+
+  // Respuesta estandar { success, data, error }: el resto del panel sigue recibiendo { ok, ...campos }.
+  if (datos && typeof datos === 'object' && 'success' in datos) {
+    return { ok: true, ...(datos.data || {}) };
   }
 
   return datos;
@@ -111,4 +116,16 @@ export function obtenerEstado(signal) {
 
 export function encolarVideo(url) {
   return solicitar('/api/panel/encolar', { metodo: 'POST', cuerpo: { url } });
+}
+
+export function obtenerIncidencia(id, signal) {
+  return solicitar('/api/panel/incidencias/' + encodeURIComponent(id), { signal });
+}
+
+export function guardarCookiesRed(red, cookies) {
+  return solicitar('/api/panel/cookies-redes/' + encodeURIComponent(red), { metodo: 'POST', cuerpo: { cookies } });
+}
+
+export function quitarCookiesRed(red) {
+  return solicitar('/api/panel/cookies-redes/' + encodeURIComponent(red), { metodo: 'DELETE' });
 }

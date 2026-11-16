@@ -23,6 +23,7 @@
       </div>
       <div class="acciones">
         <button id="btn-refrescar" class="btn btn-icono" type="button" title="Actualizar ahora" aria-label="Actualizar ahora">&#10227;</button>
+        <a class="btn" id="lnk-sesion" href="/sesion.html" style="text-decoration:none">&#127850; Sesion</a>
         <button id="btn-llave" class="btn" type="button">&#128273; Llave</button>
       </div>
     </header>
@@ -96,6 +97,19 @@
         <button id="llave-borrar" class="btn" type="button">Borrar</button>
         <button id="llave-cancelar" class="btn" type="button">Cancelar</button>
         <button class="btn btn-primario" type="submit">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-red">
+    <form id="form-red" autocomplete="off">
+      <h2 id="red-titulo">Pegar cookies</h2>
+      <p id="red-pasos"></p>
+      <textarea id="input-cookies" class="area-cookies" rows="8" spellcheck="false" autocomplete="off" placeholder='[ { "name": "sessionid", "value": "...", "domain": ".tiktok.com" } ]'></textarea>
+      <p id="red-error" class="red-error" role="alert" hidden></p>
+      <div class="dlg-acciones">
+        <button id="red-cancelar" class="btn" type="button">Cancelar</button>
+        <button id="red-guardar" class="btn btn-primario" type="submit">Guardar</button>
       </div>
     </form>
   </dialog>

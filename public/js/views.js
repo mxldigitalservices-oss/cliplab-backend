@@ -6,8 +6,9 @@ const ETIQUETAS_CLIP = {
 };
 
 const ETIQUETAS_CONEXION = {
-  activa: { texto: 'Sesion activa', clase: 'ok' },
-  expirada: { texto: 'Sesion expirada', clase: 'warn' },
+  activa: { texto: 'Conectado', clase: 'ok' },
+  expirada: { texto: 'Sesion vencida', clase: 'warn' },
+  ilegible: { texto: 'Clave distinta', clase: 'err' },
   sin_sesion: { texto: 'Sin sesion', clase: 'neutro' },
 };
 
@@ -136,7 +137,8 @@ export function renderClips(clips, mensajeVacio) {
       (clip.estado === 'procesando'
         ? barraProgreso(clip.progreso) + '<div class="meta"><span>' + esc(clip.etapa || 'En proceso') + ' - ' + porcentaje(clip.progreso) + '%</span></div>'
         : '') +
-      (clip.copy ? '<div class="copy"><strong>Copy</strong><p>' + esc(clip.copy) + '</p></div>' : '') +
+      (clip.marketing && clip.marketing.titulo ? '<div class="copy"><strong>Titulo viral</strong><p>' + esc(clip.marketing.titulo) + '</p></div>' : '') +
+      (clip.copy ? '<div class="copy"><strong>Descripcion + hashtags</strong><p>' + esc(clip.copy) + '</p></div>' : '') +
       (clip.cta ? '<div class="copy"><strong>CTA</strong><p>' + esc(clip.cta) + '</p></div>' : '') +
       (fuente && fuente !== clip.titulo ? '<div class="fuente">Fuente: <a href="' + esc(fuente) + '" target="_blank" rel="noopener noreferrer">' + esc(fuente) + '</a></div>' : '') +
       '<div class="card-acciones">' +
@@ -147,16 +149,29 @@ export function renderClips(clips, mensajeVacio) {
   }).join('');
 }
 
+export function nombrePlataforma(plataforma) {
+  return NOMBRES_PLATAFORMA[plataforma] || plataforma;
+}
+
 export function renderConexiones(conexiones) {
   if (!conexiones || conexiones.length === 0) {
     return vacio('No hay cuentas vinculadas todavia.');
   }
   return conexiones.map((c) => {
     const etiqueta = ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
+    const conSesion = c.estado !== 'sin_sesion';
+    const plat = esc(c.plataforma);
     return '<article class="card">' +
-      '<div class="card-cab"><h3>' + esc(NOMBRES_PLATAFORMA[c.plataforma] || c.plataforma) + '</h3>' + badge(etiqueta) + '</div>' +
-      '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || 'sin vincular') + '</span>' +
+      '<div class="card-cab"><h3>' + esc(nombrePlataforma(c.plataforma)) + '</h3>' + badge(etiqueta) + '</div>' +
+      '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || (c.estado === 'activa' ? 'cuenta vinculada' : 'sin vincular')) + '</span>' +
+      (c.expiraEn ? '<span>Vence: ' + esc(formatoFecha(c.expiraEn)) + '</span>' : '') +
       '<span>Ultima verificacion: ' + esc(formatoFecha(c.ultimaVerificacion)) + '</span></div>' +
+      (c.estado === 'ilegible' && c.detalle ? '<div class="meta"><span>' + esc(c.detalle) + '</span></div>' : '') +
+      '<div class="acciones">' +
+        '<button class="btn' + (c.estado === 'activa' ? '' : ' btn-primario') + '" type="button" data-red-accion="pegar" data-red="' + plat + '">' +
+          (conSesion ? 'Reemplazar cookies' : 'Pegar cookies') + '</button>' +
+        (conSesion ? '<button class="btn" type="button" data-red-accion="quitar" data-red="' + plat + '">Quitar</button>' : '') +
+      '</div>' +
     '</article>';
   }).join('');
 }
@@ -180,18 +195,28 @@ export function renderLotes(lotes) {
   }).join('');
 }
 
-export function renderIncidencias(incidencias, ocultarResueltas) {
+export function renderIncidencias(incidencias, ocultarResueltas, contexto = {}) {
+  const abiertas = contexto.abiertas || new Set();
+  const textos = contexto.textos || new Map();
   const visibles = (incidencias || []).filter((i) => !(ocultarResueltas && i.resuelta));
   if (visibles.length === 0) {
     return vacio('Sin incidencias registradas.');
   }
   return visibles.map((i) => {
     const etiqueta = ETIQUETAS_NIVEL[i.nivel] || ETIQUETAS_NIVEL.info;
+    // El stderr completo se pide bajo demanda (data-inc); mientras llega se muestra el resumen.
+    const tieneDetalle = Boolean(i.tieneDetalle || i.detalle);
+    const textoDetalle = textos.get(i.id) || i.detalle || i.detalleResumen || '';
+    const kb = i.detalleBytes ? ' (' + Math.max(1, Math.round(i.detalleBytes / 1024)) + ' KB)' : '';
     return '<div class="fila nivel-' + esc(i.nivel in ETIQUETAS_NIVEL ? i.nivel : 'info') + (i.resuelta ? ' resuelta' : '') + '">' +
       '<div class="fila-cab"><span class="fila-titulo">' + esc(i.mensaje) + '</span>' + badge(etiqueta) + '</div>' +
       '<div class="meta"><span>Origen: ' + esc(i.origen || 'sistema') + '</span>' +
       '<span>' + esc(formatoFecha(i.creadoEn)) + '</span>' +
       '<span>' + (i.resuelta ? 'Resuelta' : 'Abierta') + '</span></div>' +
+      (tieneDetalle
+        ? '<details class="detalle" data-inc="' + esc(i.id) + '"' + (abiertas.has(i.id) ? ' open' : '') + '>' +
+          '<summary>Ver stderr completo' + esc(kb) + '</summary><pre>' + esc(textoDetalle) + '</pre></details>'
+        : '') +
     '</div>';
   }).join('');
 }

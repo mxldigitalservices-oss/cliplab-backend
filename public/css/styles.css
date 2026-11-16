@@ -169,3 +169,6 @@ dialog p { color: var(--suave); margin: 0 0 12px; }
 }
 
 .secreto { -webkit-text-security: disc; }
+
+.area-cookies { width: 100%; box-sizing: border-box; background: var(--fondo, #0b0d12); color: var(--texto); border: 1px solid var(--borde); border-radius: 8px; padding: 10px; font: 12px/1.4 ui-monospace, monospace; resize: vertical; }
+.red-error { color: var(--err); margin: 8px 0 0; }
