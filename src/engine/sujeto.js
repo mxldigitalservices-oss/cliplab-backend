@@ -3,9 +3,11 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 // ---------------------------------------------------------------------------
-// Seguimiento de rostros para el render: zoom/encuadre sobre la cara y split-screen (2 rostros).
-// Usa scripts/sujeto.py (OpenCV Haar) -> JSON { x, l, r, n }.
-//   FACE_TRACK=off     desactiva todo (vuelve al encuadre centrado)
+// Seguimiento de rostros para el render (Frente A: encuadre sobre el rostro; Frente B: split-screen).
+// Mide el rostro con scripts/sujeto.py (OpenCV Haar -> JSON { x, l, r, n }) y entrega, por cada corte,
+// `sujeto = { n, x, l, r, cx, estable2, split }`. render.js usa `cx` para centrar el crop 9:16 y
+// `split` para armar el doble pantallazo (2 rostros estables).
+//   FACE_TRACK=off     desactiva todo (vuelve al recorte centrado)
 //   SPLIT_SCREEN=off   desactiva solo el doble pantallazo
 //   PYTHON_BIN         ejecutable de Python (por defecto python3)
 // ---------------------------------------------------------------------------
@@ -16,7 +18,7 @@ const PYTHON = process.env.PYTHON_BIN || 'python3';
 const ACTIVO = process.env.FACE_TRACK !== 'off';
 const SPLIT = process.env.SPLIT_SCREEN !== 'off';
 const MUESTRAS = [0.2, 0.5, 0.8]; // posiciones dentro de cada beat
-const GRUPO_MAX = 0.25; // si el grupo ocupa mas que esto del ancho, no cabe en el crop 9:16: se usa el rostro central
+const GRUPO_MAX = 0.25; // un grupo mas ancho que esto (fraccion del frame) no cabe en el crop 9:16
 const SEPARACION_MIN = 0.2; // separacion minima l..r para considerar dos personas distintas
 
 const cacheDim = new Map();
@@ -32,7 +34,7 @@ async function dimensiones(video) {
   return d;
 }
 
-// UNICO punto que conoce la CLI de sujeto.py. Si cambia, se ajusta aqui.
+// UNICO punto que conoce la CLI de sujeto.py: python3 scripts/sujeto.py <video> <segundo>.
 async function muestrearRostro(video, t, ancho) {
   try {
     const { stdout } = await run(PYTHON, [SCRIPT, video, t.toFixed(3)], { timeout: 20000, maxBuffer: 1 << 20 });
@@ -49,7 +51,7 @@ async function muestrearRostro(video, t, ancho) {
 
 const mediana = (a) => [...a].sort((p, q) => p - q)[Math.floor(a.length / 2)];
 
-/** Resume las muestras de un beat. Devuelve null si no hubo ningun rostro. */
+/** Resume las muestras de un beat en { n, x, l, r, cx, estable2 }. null si ninguna vio un rostro. */
 export function resumirMuestras(m) {
   const con = m.filter((s) => s.n > 0);
   if (con.length === 0) return null;
@@ -58,12 +60,14 @@ export function resumirMuestras(m) {
   const r = {
     n: mediana(con.map((s) => s.n)),
     x: mediana(con.map((s) => s.x)),
+    // 2 rostros estables: al menos 2 de 3 muestras con n=2 y ninguna con mas de 2
     estable2: dos.length >= 2 && m.every((s) => s.n <= 2),
   };
   if (grupo.length) {
     r.l = mediana(grupo.map((s) => s.l));
     r.r = mediana(grupo.map((s) => s.r));
   }
+  // Un grupo que cabe en el crop se centra completo; si no cabe, se sigue el centro reportado (x).
   r.cx = r.l != null && r.r - r.l <= GRUPO_MAX ? (r.l + r.r) / 2 : r.x;
   return r;
 }
@@ -73,6 +77,7 @@ export function marcarSplit(res, apaisado, activo = true) {
   const sp = res.map((s) => Boolean(activo && apaisado && s && s.estable2 && s.r - s.l >= SEPARACION_MIN));
   const salida = res.map((s, i) => (s ? { ...s, split: sp[i] } : null));
   res.forEach((s, i) => {
+    // un beat flojo entre dos split se queda en split
     if (sp[i] || !sp[i - 1] || !sp[i + 1]) return;
     const a = res[i - 1];
     const b = res[i + 1];
@@ -81,9 +86,10 @@ export function marcarSplit(res, apaisado, activo = true) {
   return salida;
 }
 
-/** Anade `sujeto` a cada corte: { n, x, cx, l, r, split }. Si algo falla devuelve los cortes sin tocar. */
+/** Anade `sujeto` a cada corte. Si todos ya lo traen (pruebas) se respetan. Nunca lanza. */
 export async function analizarCortes(entrada, cortes, inicio) {
   if (!ACTIVO || !Array.isArray(cortes) || cortes.length === 0) return cortes;
+  if (cortes.every((c) => c.sujeto !== undefined)) return cortes;
   const { ancho, alto } = await dimensiones(entrada);
   if (!ancho) return cortes;
 
@@ -100,7 +106,7 @@ export async function analizarCortes(entrada, cortes, inicio) {
 /** Expresion X del crop 9:16 (en coordenadas del video ya escalado). Sin rostro: centrado. */
 export function xRostro(s) {
   if (!s || !Number.isFinite(s.cx)) return '(in_w-out_w)/2';
-  return "'clip(" + s.cx.toFixed(4) + "*in_w-out_w/2,0,in_w-out_w)'";
+  return "'clip(" + Math.min(1, Math.max(0, s.cx)).toFixed(4) + "*in_w-out_w/2,0,in_w-out_w)'";
 }
 
 /** Fragmento de filtro (continua tras trim/setpts) que arma el doble pantallazo y termina en [v<i>]. */
