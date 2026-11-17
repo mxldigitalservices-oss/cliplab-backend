@@ -41,8 +41,12 @@ RUN echo "yt-dlp refresh ${YTDLP_CACHE_BUST}" \
 FROM node:22-bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-dejavu-core python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+# Seguimiento de rostros (scripts/sujeto.py). OpenCV debe ser 4.x: la serie 5.x ya no trae CascadeClassifier (Haar).
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir "opencv-python-headless>=4.10,<5"
 
 WORKDIR /app
 
@@ -54,6 +58,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
+COPY scripts/sujeto.py ./scripts/sujeto.py
 COPY public ./public
 COPY assets ./assets
 
@@ -63,7 +68,11 @@ ENV NODE_ENV=production \
     CPU_THREADS=2 \
     YTDLP_PATH=/usr/local/bin/yt-dlp \
     WHISPER_PATH=/opt/whisper/whisper-cli \
-    WHISPER_MODEL=/opt/whisper/modelo.bin
+    WHISPER_MODEL=/opt/whisper/modelo.bin \
+    PYTHON_BIN=/opt/venv/bin/python
+
+# Falla el BUILD (no el render en produccion) si OpenCV o el clasificador Haar no cargan.
+RUN /opt/venv/bin/python /app/scripts/sujeto.py --check
 
 EXPOSE 8080
 
