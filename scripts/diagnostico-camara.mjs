@@ -12,12 +12,12 @@ for (let t = 0; t < hasta - desde; t += paso) cortes.push({ desde: t, hasta: Mat
 
 const res = await analizarCortes(video, cortes, desde);
 const f = (v) => (v == null ? '  -  ' : v.toFixed(2).padStart(5));
-console.log('corte        n  ratio2  sep   split  camara cx (min..max, keyframes)');
+console.log('corte        n  pers cambios ratio2  sep   split  camara cx (min..max, keyframes)');
 res.forEach((x, i) => {
   const s = x.sujeto;
   const rango = `${desde + x.desde}-${desde + x.hasta}s`.padEnd(11);
   if (!s) { console.log(`${rango}  sin rostro -> recorte centrado`); return; }
   const cxs = (s.kf || []).map((k) => k.cx);
   const cam = cxs.length ? `${Math.min(...cxs).toFixed(3)}..${Math.max(...cxs).toFixed(3)} (${cxs.length} kf)` : `fijo ${s.cx?.toFixed(3)}`;
-  console.log(`${rango}  ${String(s.n).padStart(2)}  ${f(s.ratio2)}  ${f(s.l != null ? s.r - s.l : null)}  ${s.split ? 'SPLIT' : '  .  '}  ${cam}`);
+  console.log(`${rango}  ${String(s.n).padStart(2)}  ${String(s.personas ?? '-').padStart(3)}  ${String(s.cambios ?? '-').padStart(5)}  ${f(s.ratio2)}  ${f(s.l != null ? s.r - s.l : null)}  ${s.split ? 'SPLIT' : '  .  '}  ${cam}`);
 });

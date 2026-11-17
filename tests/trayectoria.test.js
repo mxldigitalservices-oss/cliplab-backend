@@ -34,7 +34,7 @@ test('un desplazamiento real SI se sigue, con inercia y sin pasar la velocidad m
   assert.ok(Math.abs(kf[kf.length - 1].cx - 0.65) < 0.06, 'termina cerca del nuevo sitio: ' + kf[kf.length - 1].cx);
   for (let i = 1; i < kf.length; i++) {
     const v = (kf[i].cx - kf[i - 1].cx) / (kf[i].t - kf[i - 1].t);
-    assert.ok(Math.abs(v) <= CAM.vmax + 1e-6, 'velocidad ' + v + ' excede vmax');
+    assert.ok(Math.abs(v) <= CAM.vmax * CAM.urgenteFactor + 1e-6, 'velocidad ' + v + ' excede vmax');
     assert.ok(kf[i].cx >= kf[i - 1].cx - 1e-9, 'sin retrocesos');
   }
 });

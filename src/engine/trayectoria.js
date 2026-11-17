@@ -10,11 +10,13 @@
 //   3. Filtro de mediana: un falso positivo o un cuadro fallido no mueve la camara.
 //   4. Zona muerta con histeresis: no se mueve hasta que el sujeto sale de +-ZONA_ON; una vez en marcha,
 //      sigue hasta quedar a menos de ZONA_OFF (asi no arranca y se detiene a cada gesto).
-//   5. Inercia: aproximacion exponencial (constante TAU) con velocidad maxima VMAX.
+//   5. Inercia: aproximacion exponencial (constante TAU) con velocidad maxima VMAX. Si el objetivo queda a mas
+//      de URGENTE del centro actual (cambio de interlocutor), TAU baja y VMAX sube un 30 % para atraparlo.
 //   6. Se simplifican los keyframes (Ramer-Douglas-Peucker) para que la expresion de FFmpeg sea corta.
 //
 // Todo en fracciones del ancho del frame (0..1). Ajustable por entorno:
-//   CAM_ZONA_ON, CAM_ZONA_OFF, CAM_TAU (s), CAM_VMAX (frame/s), CAM_MEDIANA (impar)
+//   CAM_ZONA_ON, CAM_ZONA_OFF, CAM_TAU (s), CAM_VMAX (frame/s), CAM_MEDIANA (impar),
+//   CAM_URGENTE (distancia que activa la aceleracion), CAM_URGENTE_FACTOR (1.3 = 30 % mas rapido)
 // ---------------------------------------------------------------------------
 
 const num = (v, def) => (Number.isFinite(Number(v)) && v !== undefined && v !== '' ? Number(v) : def);
@@ -25,6 +27,8 @@ export const CAM = {
   tau: num(process.env.CAM_TAU, 0.55),
   vmax: num(process.env.CAM_VMAX, 0.22),
   mediana: num(process.env.CAM_MEDIANA, 5),
+  urgente: num(process.env.CAM_URGENTE, 0.15), // distancia (fraccion del frame) a partir de la cual se acelera
+  urgenteFactor: num(process.env.CAM_URGENTE_FACTOR, 1.3),
   grupoMax: 0.25, // un grupo mas ancho que esto (fraccion del frame) no cabe en el crop 9:16
   tolerancia: 0.003, // error maximo al simplificar keyframes
   maxKeyframes: 16,
@@ -66,14 +70,18 @@ export function simularCamara(objetivos, tiempos, cfg = CAM) {
   const pos = [objetivos[0]];
   let p = objetivos[0];
   let moviendo = false;
+  let urgente = false; // la transicion arranco lejos: se mantiene acelerada hasta que la camara se asienta
   for (let i = 1; i < objetivos.length; i++) {
     const dt = Math.max(1e-3, tiempos[i] - tiempos[i - 1]);
     const err = objetivos[i] - p;
     if (!moviendo && Math.abs(err) > cfg.zonaOn) moviendo = true;
     if (moviendo && Math.abs(err) < cfg.zonaOff) moviendo = false;
+    if (!moviendo) urgente = false;
+    else if (Math.abs(err) > cfg.urgente) urgente = true;
     if (moviendo) {
-      const alfa = 1 - Math.exp(-dt / cfg.tau);
-      const paso = acotar(err * alfa, -cfg.vmax * dt, cfg.vmax * dt);
+      const f = urgente ? cfg.urgenteFactor : 1; // sujeto lejos: transicion mas rapida de principio a fin
+      const alfa = 1 - Math.exp(-(dt * f) / cfg.tau);
+      const paso = acotar(err * alfa, -cfg.vmax * f * dt, cfg.vmax * f * dt);
       p += paso;
     }
     pos.push(p);
@@ -107,12 +115,15 @@ export function simplificar(kf, tol) {
  * Construye los keyframes de un corte.
  * @param muestras  [{ t, n, x, l, r }] con t en segundos RELATIVOS al inicio del corte
  * @param duracion  largo del corte en segundos
+ * @param objetivos opcional: objetivo por muestra ya calculado (alineado con `muestras` ordenadas por t), p. ej. el
+ *                  del interlocutor activo; sin el, se usa el centro del grupo o el rostro principal
  * @returns [{ t, cx }] (t=0 y t=duracion siempre presentes) o null si no hubo ningun rostro
  */
-export function construirTrayectoria(muestras, duracion, cfg = CAM) {
+export function construirTrayectoria(muestras, duracion, cfg = CAM, objetivos = null) {
   if (!Array.isArray(muestras) || muestras.length === 0 || !(duracion > 0)) return null;
   const ordenadas = [...muestras].sort((a, b) => a.t - b.t);
-  const crudo = rellenarHuecos(ordenadas.map((s) => objetivoDe(s, cfg.grupoMax)));
+  const usar = Array.isArray(objetivos) && objetivos.length === ordenadas.length;
+  const crudo = rellenarHuecos(ordenadas.map((s, i) => (usar ? objetivos[i] : objetivoDe(s, cfg.grupoMax))));
   if (!crudo) return null;
 
   const limpio = medianaMovil(crudo, cfg.mediana).map((v) => acotar(v, 0, 1));

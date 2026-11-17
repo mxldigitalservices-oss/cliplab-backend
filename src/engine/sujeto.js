@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { logger } from '../utils/logger.js';
 import { construirTrayectoria, expresionLineal, CAM } from './trayectoria.js';
+import { personasDe, objetivosInterlocutor } from './interlocutor.js';
 
 // ---------------------------------------------------------------------------
 // Seguimiento de rostros para el render (Frente A: encuadre sobre el rostro; Frente B: split-screen).
@@ -17,6 +18,8 @@ import { construirTrayectoria, expresionLineal, CAM } from './trayectoria.js';
 //   SPLIT_SEP_ON / _OFF   separacion l..r para ENTRAR / SEGUIR en split (0.20 / 0.14)
 //   SPLIT_MIN_S           duracion minima de un corte para ENTRAR en split (1.5 s)
 //   SPLIT_MIN_RUN_S       un tramo de split aislado mas corto que esto se descarta (2.0 s)
+//   SPLIT_SEP_INTER       separacion minima para ENTRAR en split cuando las dos personas interactuan (0.16)
+//   (interlocutor.js: PERSONA_*, ACTIVO_*)  quien esta activo y cuando la camara cambia de persona
 //   CAM_*                 inercia de la camara (ver trayectoria.js)
 // ---------------------------------------------------------------------------
 
@@ -34,6 +37,8 @@ export const UMBRALES = {
   ratioEntra: 0.6, // fraccion de cuadros con rostro que deben tener exactamente 2 para entrar
   ratioSigue: 0.3, // ...y para seguir en split
   ratioTres: 0.15, // tolerancia a cuadros con 3+ rostros (falsos positivos)
+  sepInter: num(process.env.SPLIT_SEP_INTER, 0.16), // pareja que interactua: umbral de entrada mas bajo (prioridad de split)
+  cambiosInter: 2, // cambios de interlocutor dentro del corte que cuentan como "interaccion cruzada"
   minEntradaS: num(process.env.SPLIT_MIN_S, 1.5),
   minTramoS: num(process.env.SPLIT_MIN_RUN_S, 2.0),
 };
@@ -65,7 +70,10 @@ async function muestrearClip(video, desde, hasta) {
         const n = Number(m.n) || 0;
         if (n < 1 || !Number.isFinite(Number(m.x))) return { t: Number(m.t), n: 0 };
         const f = (v) => Math.min(1, Math.max(0, Number(v)));
-        return { t: Number(m.t), n, x: f(m.x), l: f(m.l ?? m.x), r: f(m.r ?? m.x) };
+        const rostros = Array.isArray(m.rostros)
+          ? m.rostros.filter((q) => Number.isFinite(Number(q.x))).map((q) => ({ x: f(q.x), w: f(q.w ?? 0.06), act: Number.isFinite(Number(q.act)) ? Number(q.act) : null }))
+          : undefined;
+        return { t: Number(m.t), n, x: f(m.x), l: f(m.l ?? m.x), r: f(m.r ?? m.x), ...(rostros ? { rostros } : {}) };
       });
   } catch (error) {
     // Antes este fallo era silencioso y el clip salia centrado sin explicacion.
@@ -101,6 +109,18 @@ export function resumirMuestras(m) {
     r.l = mediana(base.map((s) => s.l));
     r.r = mediana(base.map((s) => s.r));
   }
+  // Personas persistentes (interlocutor.js): una persona que Haar solo ve en parte de los cuadros sigue contando.
+  const pers = personasDe(m);
+  if (pers) {
+    r.personas = pers.length;
+    if (pers.length === 2) {
+      r.estable2 = true;
+      r.l = pers[0].l;
+      r.r = pers[1].r;
+    } else if (pers.length > 2) {
+      r.estable2 = false; // mesa redonda: no cabe en dos mitades
+    }
+  }
   // Un grupo que cabe en el crop se centra completo; si no cabe, se sigue el centro reportado (x).
   r.cx = r.l != null && r.r - r.l <= GRUPO_MAX ? (r.l + r.r) / 2 : r.x;
   return r;
@@ -115,7 +135,11 @@ const separacion = (s) => (s && s.l != null && s.r != null ? s.r - s.l : 0);
 export function marcarSplit(res, apaisado, activo = true, opt = {}) {
   const U = { ...UMBRALES, ...opt };
   const puede = Boolean(activo && apaisado);
-  const entra = (s) => Boolean(s && s.estable2 && separacion(s) >= U.sepOn && !(s.dur < U.minEntradaS));
+  const interactuan = (s) => Boolean(s && s.personas === 2 && s.cambios >= U.cambiosInter);
+  // Una pareja que se alterna el foco entra con un umbral de separacion mas bajo: panear de uno a otro cada
+  // pocos segundos es peor que mostrar a los dos.
+  const entra = (s) => Boolean(s && !(s.dur < U.minEntradaS) &&
+    ((s.estable2 && separacion(s) >= U.sepOn) || (interactuan(s) && separacion(s) >= U.sepInter)));
   const sigue = (s) => Boolean(s && (s.ratio2 ?? (s.estable2 ? 1 : 0)) >= U.ratioSigue && separacion(s) >= U.sepOff);
 
   // 1) Schmitt hacia adelante
@@ -174,7 +198,16 @@ export async function analizarCortes(entrada, cortes, inicio) {
     const res = resumirMuestras(del);
     if (!res) return null;
     res.dur = largo;
-    const kf = construirTrayectoria(del.map((m) => ({ ...m, t: m.t - t0 })), largo);
+    const rel = del.map((m) => ({ ...m, t: m.t - t0 }));
+    // Con dos personas persistentes la camara sigue al interlocutor activo (o al par si caben en el crop)
+    const pers = personasDe(rel);
+    let objetivos = null;
+    if (pers && pers.length === 2) {
+      const o = objetivosInterlocutor(rel, pers, GRUPO_MAX);
+      objetivos = o.objetivos;
+      res.cambios = o.cambios;
+    }
+    const kf = construirTrayectoria(rel, largo, CAM, objetivos);
     if (kf) res.kf = kf;
     return res;
   });
