@@ -470,21 +470,61 @@ if (__pubCont) {
   __pubCont.parentNode.insertBefore(__barraClip, __pubCont);
   const __selClip = document.getElementById("sel-clip-pub");
 
+  function __extraerClipsDeObjeto(obj) {
+    if (!obj || typeof obj !== "object") return [];
+    const candidatos = [
+      obj.clips,
+      obj.items,
+      obj.estado && obj.estado.clips,
+      obj.datos && obj.datos.clips,
+      obj.data && obj.data.clips,
+    ];
+    for (const arr of candidatos) {
+      if (Array.isArray(arr) && arr.length) return arr;
+    }
+    return [];
+  }
+
+  function __extraerClipsDelDom() {
+    const nodos = [...document.querySelectorAll("[data-clip-id], [data-id]")];
+    return nodos
+      .map((el) => {
+        const id = el.getAttribute("data-clip-id") || el.getAttribute("data-id") || "";
+        const tit = (el.querySelector("h3, h4, .titulo, .clip-titulo")?.textContent || id).trim();
+        return id ? { id, titulo: tit } : null;
+      })
+      .filter(Boolean);
+  }
+
   async function __cargarClipsPublicador() {
     try {
-      const r = await fetch("/api/panel/estado");
-      const d = await r.json();
-      const lista = (d.clips || d.items || []).filter((c) => c && (c.id || c._id));
+      let lista = [];
+      for (const url of ["/api/panel/estado", "/api/clips"]) {
+        const r = await fetch(url).catch(() => null);
+        if (r && r.ok) {
+          const d = await r.json().catch(() => null);
+          lista = __extraerClipsDeObjeto(d).filter((c) => c && (c.id || c._id || c.url));
+          if (lista.length) break;
+        }
+      }
+      if (!lista.length) lista = __extraerClipsDelDom();
+
       const actual = __selClip.value;
       if (!lista.length) {
         __selClip.innerHTML = "<option value=\"\">No hay clips listos todavía</option>";
         return;
       }
-      __selClip.innerHTML = lista.map((c) => {
-        const id = String(c.id || c._id);
-        const tit = String(c.titulo || c.title || c.nombre || id).slice(0, 70);
-        return "<option value=\"" + id.replace(/"/g, "&quot;") + "\">" + tit + " (" + id + ")</option>";
-      }).join("");
+      const vistas = new Map();
+      for (const c of lista) {
+        const id = String(c.id || c._id || c.url);
+        if (!vistas.has(id)) {
+          const tit = String(c.titulo || c.title || c.nombre || id).slice(0, 75);
+          vistas.set(id, { id, tit });
+        }
+      }
+      __selClip.innerHTML = [...vistas.values()]
+        .map(({ id, tit }) => "<option value=\"" + id.replace(/"/g, "&quot;") + "\">" + tit.replace(/</g, "&lt;") + " (" + id + ")</option>")
+        .join("");
       if (actual && [...__selClip.options].some((o) => o.value === actual)) __selClip.value = actual;
       window.__CLIP_SELECCIONADO_ID__ = __selClip.value;
       __selClip.dispatchEvent(new Event("input", { bubbles: true }));
@@ -502,11 +542,12 @@ if (__pubCont) {
   });
 
   __cargarClipsPublicador();
+  setTimeout(__cargarClipsPublicador, 1500);
   document.addEventListener("click", (ev) => {
-    const t = ev.target.closest("[data-vista=\"publicador\"]");
+    const t = ev.target.closest("[data-vista=\"publicador\"], [data-vista=\"clips\"], [data-vista=\"resumen\"]");
     if (t) {
-      __cargarClipsPublicador();
-      __pubInst.actualizar();
+      setTimeout(__cargarClipsPublicador, 250);
+      if (__pubInst) __pubInst.actualizar();
     }
   });
 }
