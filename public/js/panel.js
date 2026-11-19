@@ -1,3 +1,4 @@
+import { montarPublicador } from "./publicador-ui.js";
 import { obtenerEstado, encolarVideo, obtenerIncidencia, guardarCookiesRed, quitarCookiesRed, leerLlave, guardarLlave } from './api.js';
 import * as V from './views.js';
 import * as F from './flujo.js';
@@ -460,3 +461,15 @@ function iniciar() {
 }
 
 iniciar();
+
+const __pubCont = document.getElementById("panel-publicador-ui");
+if (__pubCont) {
+  const __pubInst = montarPublicador(__pubCont, {
+    obtenerClipId: () => window.__CLIP_SELECCIONADO_ID__ ?? "",
+    intervaloMs: 5000,
+  });
+  document.addEventListener("click", (ev) => {
+    const t = ev.target.closest("[data-vista=\"publicador\"]");
+    if (t && __pubInst) __pubInst.actualizar();
+  });
+}

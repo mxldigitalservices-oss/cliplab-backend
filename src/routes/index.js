@@ -2,6 +2,7 @@ import { Router } from 'express';
 import healthRoutes from './health.js';
 import statusRoutes from './status.js';
 import panelRoutes from './panel.js';
+import programadorRouter from './programador.js';
 import sesionRoutes from './sesion.js';
 import cookiesRedesRoutes from './cookies-redes.js';
 
@@ -21,5 +22,6 @@ router.use('/api', statusRoutes);
 router.use('/api/panel/sesion', sesionRoutes);
 router.use('/api/panel/cookies-redes', cookiesRedesRoutes);
 router.use('/api/panel', panelRoutes);
+router.use(programadorRouter);
 
 export default router;
