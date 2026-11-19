@@ -6,10 +6,9 @@ import { agregarTrabajo, cargaActual } from '../engine/cola.js';
 import { parsearUrlYoutube, segundosDesdeUrl } from '../utils/youtube.js';
 import { subidaOpcional, origenDeEncolar, descartarSubida } from '../upload.js';
 import { sanear } from '../instruccion.js';
-import { normalizarEstilo } from '../estilos-subtitulos.js';
+import { AUTO, pedirEstilo, pedirModo } from '../engine/rotacion-flujo.js';
 
 const router = Router();
-const MODOS = ['recorte', 'blur'];
 const subida = subidaOpcional();
 
 router.use(requireMasterKey);
@@ -37,7 +36,8 @@ router.get('/incidencias/:id', (req, res) => {
 });
 
 // Acepta JSON { url, ... } o multipart/form-data con el campo "archivo" (mp4, mov, mkv, webm) y los mismos campos de texto.
-// Ademas: instruccion (que buscar, opcional) y estiloSubtitulos (dinamico | clasico | minimal).
+// Ademas: instruccion (que buscar, opcional), estiloSubtitulos (dinamico | clasico | minimal) y modo (recorte | blur).
+// estiloSubtitulos y modo vacios o "auto" rotan de forma ciclica (sin repetir hasta agotar la tanda); un valor manual se respeta.
 router.post('/encolar', subida, async (req, res, next) => {
   try {
     const cuerpo = req.body || {};
@@ -73,12 +73,11 @@ router.post('/encolar', subida, async (req, res, next) => {
       return await rechazar('La cantidad de clips debe ser un entero entre 1 y ' + config.segmentsMax);
     }
 
-    const modo = cuerpo.modo === undefined || cuerpo.modo === '' ? config.defaultRenderMode : cuerpo.modo;
-    if (!MODOS.includes(modo)) return await rechazar('El modo debe ser recorte o blur');
-
+    let modo;
     let estiloSubtitulos;
     try {
-      estiloSubtitulos = normalizarEstilo(cuerpo.estiloSubtitulos);
+      modo = pedirModo(cuerpo.modo);                       // AUTO (rota) | recorte | blur
+      estiloSubtitulos = pedirEstilo(cuerpo.estiloSubtitulos);   // AUTO (rota) | dinamico | clasico | minimal
     } catch (error) {
       return await rechazar(error.message);
     }
@@ -96,7 +95,8 @@ router.post('/encolar', subida, async (req, res, next) => {
     const manual = inicioCuerpo !== null || duracionCuerpo !== null || inicioUrl > 0;
 
     const fuente = esArchivo ? origen.nombreOriginal || 'Archivo local' : parsed.toString();
-    const clip = store.encolar(fuente, { origen: origen.tipo, instruccion, estiloSubtitulos });
+    // Con rotacion el estilo concreto de cada clip se conoce cuando el pipeline planifica los cortes; mientras tanto va vacio.
+    const clip = store.encolar(fuente, { origen: origen.tipo, instruccion, estiloSubtitulos: estiloSubtitulos === AUTO ? null : estiloSubtitulos });
     agregarTrabajo({
       id: clip.id,
       url: esArchivo ? null : parsed.toString(),

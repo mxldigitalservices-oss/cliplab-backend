@@ -15,6 +15,7 @@ import { AJUSTES, curarVideo, fichaDeVentana, armarRevisionTecnica } from './cur
 import { detalleDeError } from '../utils/run.js';
 import { borrarUpload } from '../upload.js';
 import { construirAssEstilo } from '../estilos-subtitulos.js';
+import { perfilesDeTrabajo } from './rotacion-flujo.js';
 
 let avisoLogo = false;
 
@@ -165,7 +166,8 @@ function recortarPalabras(palabras, base, largo) {
     .map((p) => ({ texto: p.texto, inicio: Math.max(0, p.inicio - base), fin: Math.min(largo, p.fin - base) }));
 }
 
-async function procesarSegmento({ clipId, trabajo, video, segmento, indice, total, dirSegmento, palabrasFuente, signal }) {
+// `perfil` = { estilo, modo } ya resuelto para ESTE clip (valor manual del trabajo o el que le toco en la rotacion ciclica).
+async function procesarSegmento({ clipId, trabajo, video, segmento, indice, total, dirSegmento, palabrasFuente, perfil, signal }) {
   const avanzar = crearAvance(clipId);
   const { inicio, duracion } = segmento;
   const token = crypto.randomBytes(16).toString('hex');
@@ -233,11 +235,11 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
     let subtitulos = null;
     if (palabras.length > 0) {
       const rutaAss = path.join(dirSegmento, 'subtitulos.ass');
-      if (trabajo.estiloSubtitulos) {
-        // Estilo elegido en el panel (dinamico | clasico | minimal); sin estilo se conserva el subtitulado de siempre.
+      if (perfil.estilo) {
+        // Estilo manual o de la rotacion (dinamico | clasico | minimal); sin estilo se conserva el subtitulado de siempre.
         await fs.writeFile(rutaAss, construirAssEstilo(
           palabras.map((p) => ({ t: p.texto, i: p.inicio, f: p.fin })),
-          { estilo: trabajo.estiloSubtitulos, ancho: 1080, alto: 1920, fuente: config.subtitleFont, tamano: 96, margenV: 560 }
+          { estilo: perfil.estilo, ancho: 1080, alto: 1920, fuente: config.subtitleFont, tamano: 96, margenV: 560 }
         ), 'utf8');
         subtitulos = rutaAss;
       } else {
@@ -260,7 +262,7 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
       inicio: cortes ? base : inicio,
       duracion: cortes ? largoVentana : duracion,
       subtitulos,
-      modo: trabajo.modo,
+      modo: perfil.modo,
       cortes,
       signal,
       onProgreso: (fraccion) => avanzar('Renderizando 9:16', 60 + fraccion * 37),
@@ -286,7 +288,7 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
         ? { ...segmento.ficha }
         : fichaDeVentana({ palabras, tituloVideo: video.titulo, semilla: clipId + '|' + inicio, indice, total });
       ficha.revisionTecnica = armarRevisionTecnica({
-        modo: trabajo.modo,
+        modo: perfil.modo,
         duracion: resultado.duracion,
         resultado,
         analisis: resultado.analisis,
@@ -309,7 +311,7 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
       bytes: resultado.bytes,
       ancho: resultado.ancho,
       alto: resultado.alto,
-      modo: trabajo.modo,
+      modo: perfil.modo,
       inicio: inicioReal,
       conLogo: resultado.conLogo,
       transcripcion,
@@ -460,14 +462,19 @@ export async function procesarClip(trabajo, signal) {
       throw new Error('No se pudo planificar ningun corte para este video');
     }
 
+    // 2c. Estilo de subtitulos y modo de cada clip: valor manual del trabajo o rotacion ciclica (una tanda por canal).
+    const perfiles = await perfilesDeTrabajo(trabajo, segmentos.length);
+
     // 3. Un registro de clip por segmento: el primero reutiliza el del trabajo, el resto se crean.
     // Los clips curados ya llevan su ficha (con revisionTecnica "pendiente") antes de renderizarse.
     const total = segmentos.length;
     const registros = segmentos.map((segmento, i) => {
       const ficha = segmento.ficha
-        ? { ...segmento.ficha, revisionTecnica: armarRevisionTecnica({ modo: trabajo.modo, duracion: segmento.duracion }) }
+        ? { ...segmento.ficha, revisionTecnica: armarRevisionTecnica({ modo: perfiles[i].modo, duracion: segmento.duracion }) }
         : null;
       const base = {
+        ...(perfiles[i].estilo ? { estiloSubtitulos: perfiles[i].estilo } : {}),
+        ...(perfiles[i].modo ? { modo: perfiles[i].modo } : {}),
         titulo: video.titulo + etiquetaSegmento(i + 1, total),
         segmento: { indice: i + 1, total, inicio: segmento.inicio, duracion: segmento.duracion },
         ficha,
@@ -495,6 +502,7 @@ export async function procesarClip(trabajo, signal) {
           total,
           dirSegmento: path.join(dirTrabajo, 'seg-' + (i + 1)),
           palabrasFuente,
+          perfil: perfiles[i],
           signal,
         });
         exitosos.push(segmentos[i]);

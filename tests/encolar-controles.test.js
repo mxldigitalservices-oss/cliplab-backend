@@ -60,11 +60,38 @@ test('enlace (JSON): instruccion y estiloSubtitulos llegan al clip y al trabajo'
   assert.equal(trabajo.modo, 'blur');
 });
 
-test('sin instruccion ni estilo: instruccion nula y estilo dinamico por defecto', async () => {
+test('sin instruccion, estilo ni modo: rotan (el pipeline asignara cada clip) y la instruccion queda nula', async () => {
   const { status, cuerpo } = await enviarJson({ url: YT });
   assert.equal(status, 201);
   assert.equal(cuerpo.data.clip.instruccion, null);
-  assert.equal(cuerpo.data.clip.estiloSubtitulos, 'dinamico');
+  assert.equal(cuerpo.data.clip.estiloSubtitulos, null, 'aun sin estilo concreto: lo fija la rotacion al planificar los cortes');
+  const trabajo = trabajosPendientes().find((t) => t.id === cuerpo.data.clip.id);
+  assert.equal(trabajo.estiloSubtitulos, 'auto');
+  assert.equal(trabajo.modo, 'auto');
+});
+
+test('estilo y modo en "auto" (cualquier capitalizacion) rotan igual que vacios', async () => {
+  const { status, cuerpo } = await enviarJson({ url: YT, estiloSubtitulos: ' AUTO ', modo: 'Auto' });
+  assert.equal(status, 201);
+  assert.equal(cuerpo.data.clip.estiloSubtitulos, null);
+  const trabajo = trabajosPendientes().find((t) => t.id === cuerpo.data.clip.id);
+  assert.equal(trabajo.estiloSubtitulos, 'auto');
+  assert.equal(trabajo.modo, 'auto');
+});
+
+test('estilo manual con modo en auto: el estilo se respeta y solo el modo rota', async () => {
+  const { status, cuerpo } = await enviarJson({ url: YT, estiloSubtitulos: 'minimal', modo: 'auto' });
+  assert.equal(status, 201);
+  assert.equal(cuerpo.data.clip.estiloSubtitulos, 'minimal');
+  const trabajo = trabajosPendientes().find((t) => t.id === cuerpo.data.clip.id);
+  assert.equal(trabajo.estiloSubtitulos, 'minimal');
+  assert.equal(trabajo.modo, 'auto');
+});
+
+test('modo invalido: 400 y el mensaje menciona auto', async () => {
+  const { status, cuerpo } = await enviarJson({ url: YT, modo: 'zoom' });
+  assert.equal(status, 400);
+  assert.match(cuerpo.error, /recorte, blur o auto/);
 });
 
 test('archivo (multipart): se valida, se encola sin URL y conserva instruccion, estilo y cantidad', async () => {

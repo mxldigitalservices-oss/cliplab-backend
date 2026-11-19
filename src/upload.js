@@ -12,14 +12,57 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
+import os from "node:os";
 import multer from "multer";
+import { logger } from "./utils/logger.js";
 
 const num = (k, d) => { const r = process.env[k]; const v = Number(r); return r === undefined || r === "" || !Number.isFinite(v) ? d : v; };
 
 export const EXTENSIONES = Object.freeze([".mp4", ".mov", ".mkv", ".webm"]);
 // Fuera de DATA_DIR/clips: el janitor borra a los 30 min cualquier archivo "temporal" de la carpeta de clips, y un video
 // subido puede esperar en cola mucho más que eso.
-export const dirUploads = () => path.resolve(process.env.UPLOADS_DIR || path.join(process.env.DATA_DIR || "/tmp/cliplab-data", "uploads"));
+// Carpeta de subidas con respaldo. Orden: UPLOADS_DIR (o DATA_DIR/uploads) → TMP_DIR/uploads → <tmp del sistema>/cliplab-uploads.
+// Un candidato solo vale si se puede crear Y escribir en él (en Railway /data puede llegar sin permisos o sin montar: EACCES/EROFS/ENOENT).
+// Nunca lanza: si falla el principal se usa el siguiente con una advertencia; el arranque del servidor no depende de esto.
+const candidatosUploads = () => {
+  const principal = path.resolve(process.env.UPLOADS_DIR || path.join(process.env.DATA_DIR || "/tmp/cliplab-data", "uploads"));
+  const lista = [principal];
+  if (process.env.TMP_DIR) lista.push(path.resolve(process.env.TMP_DIR, "uploads"));
+  lista.push(path.resolve(os.tmpdir(), "cliplab-uploads"));
+  return [...new Set(lista)];
+};
+
+function probarEscritura(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const marca = path.join(dir, `.prueba-${process.pid}-${crypto.randomBytes(4).toString("hex")}`);
+    fs.writeFileSync(marca, "ok", { flag: "wx" });
+    fs.unlinkSync(marca);
+    return null;
+  } catch (e) { return e; }
+}
+
+let memoUploads = null;   // { clave, dir, avisado } — se resuelve una vez para que todas las rutas (guardar, borrar, purgar) coincidan
+function resolverUploads() {
+  const lista = candidatosUploads();
+  if (memoUploads?.dir && memoUploads.clave === lista[0]) return memoUploads.dir;
+  const yaAvisado = memoUploads?.clave === lista[0] && memoUploads.avisado;
+  for (const dir of lista) {
+    const error = probarEscritura(dir);
+    if (!error) {
+      memoUploads = { clave: lista[0], dir, avisado: true };
+      if (dir !== lista[0]) logger.warn("Carpeta de subidas no disponible: se usa una carpeta temporal de respaldo (los videos subidos pendientes se pierden al reiniciar)", { configurada: lista[0], respaldo: dir });
+      return dir;
+    }
+    if (!yaAvisado) logger.warn("No se puede escribir en la carpeta de subidas", { dir, codigo: error.code, mensaje: error.message });
+  }
+  memoUploads = { clave: lista[0], dir: null, avisado: true };
+  if (!yaAvisado) logger.error("Ninguna carpeta de subidas es escribible: las subidas de archivo responderan 503 (los enlaces siguen funcionando)", { candidatos: lista });
+  return null;
+}
+
+export const dirUploads = () => resolverUploads() ?? candidatosUploads()[0];
+export const uploadsDisponible = () => resolverUploads() !== null;
 const maxBytes = () => Math.round(num("MAX_UPLOAD_MB", 1024) * 1048576);
 const maxMinutos = () => num("MAX_UPLOAD_MIN", 240);
 
@@ -27,7 +70,7 @@ export class ErrorSubida extends Error {
   constructor(status, mensaje) { super(mensaje); this.status = status; }   // el manejador de errores de Express ya respeta e.status
 }
 
-const dentroDeUploads = ruta => { const r = path.resolve(String(ruta || "")); return r.startsWith(dirUploads() + path.sep) ? r : null; };
+const dentroDeUploads = ruta => { const r = path.resolve(String(ruta || "")); return candidatosUploads().some(d => r.startsWith(d + path.sep)) ? r : null; };
 export const borrarUpload = async ruta => { const r = dentroDeUploads(ruta); if (r) await fsp.unlink(r).catch(() => {}); };   // nunca borra fuera de uploads/
 
 // ---------- Validación real del contenido (no se confía en extensión ni en Content-Type) ----------
@@ -82,11 +125,10 @@ function traducir(err) {
 }
 
 export function subidaOpcional({ campo = "archivo" } = {}) {
-  const dir = dirUploads();
-  fs.mkdirSync(dir, { recursive: true });
+  resolverUploads();   // resuelve y avisa en el arranque, pero NUNCA lanza: un permiso en /data no debe tumbar el servidor
   const up = multer({
     storage: multer.diskStorage({
-      destination: (req, file, cb) => cb(null, dir),
+      destination: (req, file, cb) => cb(null, dirUploads()),
       filename: (req, file, cb) => cb(null, `up-${crypto.randomUUID()}${path.extname(file.originalname).toLowerCase()}`)   // el nombre del cliente nunca toca el disco
     }),
     limits: { fileSize: maxBytes(), files: 1, fields: 20, fieldSize: 20 * 1024, parts: 30 },
@@ -95,7 +137,8 @@ export function subidaOpcional({ campo = "archivo" } = {}) {
   }).single(campo);
 
   return (req, res, next) => {
-    if (!req.is("multipart/form-data")) return next();      // JSON con url: el flujo de siempre
+    if (!req.is("multipart/form-data")) return next();
+    if (!uploadsDisponible()) return next(new ErrorSubida(503, "El almacenamiento para subir archivos no está disponible ahora: usa un enlace de YouTube o inténtalo más tarde."));      // JSON con url: el flujo de siempre
     up(req, res, async err => {
       if (err) { await borrarUpload(req.file?.path); return next(traducir(err)); }
       if (!req.file) return next();                          // multipart solo con campos (p. ej. url): lo decide el handler
