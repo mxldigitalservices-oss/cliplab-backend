@@ -4,6 +4,7 @@ import { programador } from "../engine/programador.js";
 import { publicarClip, REDES_SOPORTADAS } from "../engine/publicador.js";
 import { adaptarCopyPorRed } from "../engine/marketing.js";
 import { almacenRedis } from "../storage/redis-programador.js";
+import { store } from "../storage/store.js";
 
 const TOPE_POR_HORA = Number(process.env.PUBLICADOR_TOPE_HORA) || 2;
 
@@ -28,6 +29,35 @@ function redesDeBody(body) {
   return normalizarRedes(body?.redes ?? body?.red ?? body?.plataformas, { requerida: true });
 }
 
+
+async function hidratarClipDesdeStore(clipId, body = {}) {
+  const baseBody = (body && typeof body.clip === "object" && body.clip) ? body.clip : {};
+  let guardado = null;
+  if (store && typeof store === "object") {
+    for (const fnName of ["obtenerClip", "getClip", "buscarClip", "clipPorId", "leerClip"]) {
+      if (typeof store[fnName] === "function") {
+        guardado = await store[fnName](clipId);
+        if (guardado) break;
+      }
+    }
+    if (!guardado) {
+      for (const listaKey of ["clips", "items", "trabajos", "videos"]) {
+        const arr = Array.isArray(store[listaKey]) ? store[listaKey] : [];
+        const hallado = arr.find((x) => x && String(x.id ?? x.clipId ?? "") === String(clipId));
+        if (hallado) { guardado = hallado; break; }
+      }
+    }
+  }
+  const combinado = {
+    ...(guardado && typeof guardado === "object" ? guardado : {}),
+    ...baseBody,
+    id: baseBody.id ?? guardado?.id ?? clipId,
+  };
+  combinado.titulo = combinado.titulo ?? combinado.title ?? combinado.nombre ?? guardado?.titulo ?? guardado?.title ?? "";
+  combinado.descripcion = combinado.descripcion ?? combinado.description ?? combinado.resumen ?? combinado.summary ?? guardado?.descripcion ?? guardado?.description ?? "";
+  return combinado;
+}
+
 function fechaDeBody(body) {
   const v = body?.fecha ?? body?.programarPara ?? body?.scheduledAt ?? null;
   if (v === null || v === undefined || v === "") return null;
@@ -48,7 +78,7 @@ function mensajeError(e) {
 function codigoLote(resultados) {
   const ok = resultados.filter((r) => r.ok).length;
   if (ok === resultados.length) return 200;
-  return ok === 0 ? 502 : 207;
+  return 207;
 }
 
 async function invalidarCache(clipId, accion) {
@@ -203,7 +233,7 @@ router.post(
   ah(async (req, res) => {
     const clipId = idDe(req.params.id, "id de clip");
     const redes = redesDeBody(req.body);
-    const clipBase = await cargarClip(req, clipId);
+    const clipBase = await hidratarClipDesdeStore(clipId, req.body);
     const resultados = [];
 
     for (const red of redes) {
@@ -254,7 +284,7 @@ router.post(
     const clipId = idDe(req.params.id, "id de clip");
     const redes = redesDeBody(req.body);
     const fecha = fechaDeBody(req.body);
-    const clipBase = await cargarClip(req, clipId);
+    const clipBase = await hidratarClipDesdeStore(clipId, req.body);
 
     if (typeof programador?.encolar !== "function") {
       throw new ErrorServicio("programador.encolar no disponible", 501);
