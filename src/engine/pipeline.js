@@ -11,6 +11,7 @@ import { renderizarClip } from './render.js';
 import { planificarSegmentos, leerHistorial, registrarPasada } from './segmentos.js';
 import { generarMarketing } from './marketing.js';
 import { ajustarAFrases, cortesEnCaliente, planDePlanos } from './editorial.js';
+import { AJUSTES, curarVideo, fichaDeVentana, armarRevisionTecnica } from './curador.js';
 import { detalleDeError } from '../utils/run.js';
 
 let avisoLogo = false;
@@ -79,7 +80,90 @@ function etiquetaSegmento(indice, total) {
   return total > 1 ? ' (clip ' + indice + '/' + total + ')' : '';
 }
 
-async function procesarSegmento({ clipId, trabajo, video, segmento, indice, total, dirSegmento, signal }) {
+// ---------------------------------------------------------------------------
+// Transcripcion del video completo (una sola vez, por trozos) con cache en disco por video.
+// El curador necesita el texto de TODO el video; los clips reutilizan estas palabras en vez de volver a transcribir.
+// ---------------------------------------------------------------------------
+
+const ID_CACHE = /^[A-Za-z0-9_-]{3,64}$/;
+const MAX_CACHE_ASR = 30;
+const rutaCacheAsr = (id) => path.join(config.dataDir, 'transcripciones', id + '.json');
+
+async function leerCacheAsr(video) {
+  if (!ID_CACHE.test(String(video.id))) return null;
+  try {
+    const datos = JSON.parse(await fs.readFile(rutaCacheAsr(video.id), 'utf8'));
+    if (datos && datos.version === 1 && Array.isArray(datos.palabras) && Math.abs(Number(datos.duracion) - video.duracion) <= 2) {
+      return datos.palabras.map(([texto, inicio, fin]) => ({ texto, inicio, fin }));
+    }
+  } catch {
+    // Sin cache o ilegible: se transcribe de nuevo.
+  }
+  return null;
+}
+
+async function guardarCacheAsr(video, palabras) {
+  if (!ID_CACHE.test(String(video.id)) || palabras.length === 0) return;
+  try {
+    const ruta = rutaCacheAsr(video.id);
+    await fs.mkdir(path.dirname(ruta), { recursive: true });
+    const temporal = ruta + '.' + process.pid + '.tmp';
+    const compactas = palabras.map((p) => [p.texto, Math.round(p.inicio * 100) / 100, Math.round(p.fin * 100) / 100]);
+    await fs.writeFile(temporal, JSON.stringify({ version: 1, duracion: video.duracion, palabras: compactas }));
+    await fs.rename(temporal, ruta);
+
+    const nombres = (await fs.readdir(path.dirname(ruta))).filter((n) => n.endsWith('.json'));
+    const info = [];
+    for (const nombre of nombres) {
+      try {
+        info.push({ nombre, modificado: (await fs.stat(path.join(path.dirname(ruta), nombre))).mtimeMs });
+      } catch {
+        // desaparecio mientras se listaba
+      }
+    }
+    info.sort((a, b) => b.modificado - a.modificado);
+    for (const viejo of info.slice(MAX_CACHE_ASR)) await fs.rm(path.join(path.dirname(ruta), viejo.nombre), { force: true });
+  } catch (error) {
+    logger.warn('No se pudo guardar la transcripcion en cache', { mensaje: error.message });
+  }
+}
+
+async function transcribirFuente(video, dirTrabajo, { signal, onProgreso }) {
+  const cache = await leerCacheAsr(video);
+  if (cache) {
+    logger.info('Transcripcion del video tomada de la cache', { id: video.id, palabras: cache.length });
+    return cache;
+  }
+
+  const trozo = AJUSTES.trozoAsrSeg;
+  const trozos = Math.max(1, Math.ceil(video.duracion / trozo));
+  const palabras = [];
+  for (let k = 0; k < trozos; k++) {
+    if (signal && signal.aborted) throw new Error('Trabajo cancelado');
+    const desde = k * trozo;
+    const largo = Math.min(trozo, video.duracion - desde);
+    if (largo < 1) break;
+    const parte = await transcribirAudio(video.archivo, path.join(dirTrabajo, 'asr'), {
+      inicio: desde,
+      duracion: largo,
+      signal,
+      onProgreso: (fraccion) => onProgreso((k + fraccion) / trozos),
+    });
+    for (const p of parte) palabras.push({ texto: p.texto, inicio: p.inicio + desde, fin: p.fin + desde });
+  }
+  await guardarCacheAsr(video, palabras);
+  return palabras;
+}
+
+/** Palabras de la transcripcion completa que caen dentro de [base, base + largo], con tiempos relativos a `base`. */
+function recortarPalabras(palabras, base, largo) {
+  const fin = base + largo;
+  return palabras
+    .filter((p) => p.fin > base && p.inicio < fin)
+    .map((p) => ({ texto: p.texto, inicio: Math.max(0, p.inicio - base), fin: Math.min(largo, p.fin - base) }));
+}
+
+async function procesarSegmento({ clipId, trabajo, video, segmento, indice, total, dirSegmento, palabrasFuente, signal }) {
   const avanzar = crearAvance(clipId);
   const { inicio, duracion } = segmento;
   const token = crypto.randomBytes(16).toString('hex');
@@ -89,33 +173,44 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
   try {
     await fs.mkdir(dirSegmento, { recursive: true });
 
-    // Transcripcion (30-55 %)
+    // Transcripcion (30-55 %): si el video completo ya se transcribio se reutiliza; si no, se transcribe esta ventana.
     let marca = Date.now();
-    avanzar('Transcribiendo audio', 30);
-    // Con criterio editorial se transcribe una ventana con colchon para poder arrancar y cerrar en frases completas.
+    // Con criterio editorial se toma una ventana con colchon para poder arrancar y cerrar en frases completas.
+    // Un clip curado ya viene alineado a frases, asi que solo necesita 1 s de colchon.
+    const curado = Boolean(segmento.ficha);
     const editorial = config.editorialEnabled && Boolean(video.duracion);
-    const base = editorial ? Math.max(0, inicio - config.editorialPad) : inicio;
+    const colchon = curado ? 1 : config.editorialPad;
+    const base = editorial ? Math.max(0, inicio - colchon) : inicio;
     const largoVentana = editorial
-      ? Math.min(Math.min(video.duracion, inicio + duracion + config.editorialPad) - base, config.maxClipSeconds)
+      ? Math.min(Math.min(video.duracion, inicio + duracion + colchon) - base, config.maxClipSeconds)
       : duracion;
-    const palabrasVentana = await transcribirAudio(video.archivo, dirSegmento, {
-      inicio: base,
-      duracion: largoVentana,
-      signal,
-      onProgreso: (fraccion) => avanzar('Transcribiendo audio', 30 + fraccion * 25),
-    });
+    let palabrasVentana;
+    if (palabrasFuente) {
+      avanzar('Preparando subtitulos', 40);
+      palabrasVentana = recortarPalabras(palabrasFuente, base, largoVentana);
+    } else {
+      avanzar('Transcribiendo audio', 30);
+      palabrasVentana = await transcribirAudio(video.archivo, dirSegmento, {
+        inicio: base,
+        duracion: largoVentana,
+        signal,
+        onProgreso: (fraccion) => avanzar('Transcribiendo audio', 30 + fraccion * 25),
+      });
+    }
     registrarTiempo(clipId, 'transcripcion', marca);
 
     let palabras = palabrasVentana;
     let cortes = null;
     let inicioReal = inicio;
     if (editorial && palabrasVentana.length >= 3) {
-      const ajuste = ajustarAFrases(palabrasVentana, {
-        objetivoInicio: inicio - base,
-        objetivoFin: inicio - base + duracion,
-        minSeg: Math.min(config.segmentMinSeconds, duracion),
-        maxSeg: Math.min(config.maxClipSeconds - 2, config.segmentMaxSeconds + config.editorialPad),
-      });
+      const ajuste = curado
+        ? { inicio: inicio - base, fin: inicio - base + duracion, ajustado: false }
+        : ajustarAFrases(palabrasVentana, {
+          objetivoInicio: inicio - base,
+          objetivoFin: inicio - base + duracion,
+          minSeg: Math.min(config.segmentMinSeconds, duracion),
+          maxSeg: Math.min(config.maxClipSeconds - 2, config.segmentMaxSeconds + config.editorialPad),
+        });
       const caliente = cortesEnCaliente(palabrasVentana, { desde: ajuste.inicio, hasta: Math.min(ajuste.fin, largoVentana) });
       if (caliente.tramos.length > 0) {
         cortes = planDePlanos(caliente.tramos, palabrasVentana);
@@ -123,6 +218,7 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
         inicioReal = base + ajuste.inicio;
         logger.info('Plan editorial', {
           id: clipId,
+          curado,
           ajustadoAFrases: ajuste.ajustado,
           beats: cortes.length,
           pausasEliminadasSeg: Math.round(caliente.eliminado * 10) / 10,
@@ -168,19 +264,31 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
       );
     }
 
-    // Metadatos de marketing (titulo gancho, descripcion con CTA, hashtags). Un fallo aqui no tumba el clip.
+    // Ficha del clip (gancho, flujo, valor, interes, puntaje, titulo, descripcion, revisionTecnica) y metadatos de
+    // marketing. Un fallo aqui no tumba el clip.
     const transcripcion = palabras.map((p) => p.texto).join(' ');
     let marketing = null;
+    let ficha = null;
     try {
-      marketing = generarMarketing({
-        tituloVideo: video.titulo,
-        transcripcion,
-        semilla: clipId + '|' + inicio,
-        indice,
-        total,
+      ficha = segmento.ficha
+        ? { ...segmento.ficha }
+        : fichaDeVentana({ palabras, tituloVideo: video.titulo, semilla: clipId + '|' + inicio, indice, total });
+      ficha.revisionTecnica = armarRevisionTecnica({
+        modo: trabajo.modo,
+        duracion: resultado.duracion,
+        resultado,
+        analisis: resultado.analisis,
+        palabras: palabras.length,
+        cpu: { preset: resultado.preset, hilos: resultado.hilos },
       });
+      marketing = { titulo: ficha.titulo, descripcion: ficha.descripcion, cta: ficha.cta, hashtags: ficha.hashtags, nicho: ficha.nicho, version: 2, generadoEn: new Date().toISOString() };
     } catch (error) {
-      store.registrarIncidencia('warn', 'No se pudieron generar los metadatos de marketing del clip', 'marketing', detalleDeError(error));
+      store.registrarIncidencia('warn', 'No se pudo armar la ficha del clip', 'curador', detalleDeError(error));
+      try {
+        marketing = generarMarketing({ tituloVideo: video.titulo, transcripcion, semilla: clipId + '|' + inicio, indice, total });
+      } catch (errorMarketing) {
+        store.registrarIncidencia('warn', 'No se pudieron generar los metadatos de marketing del clip', 'marketing', detalleDeError(errorMarketing));
+      }
     }
 
     store.completar(clipId, {
@@ -193,8 +301,9 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
       inicio: inicioReal,
       conLogo: resultado.conLogo,
       transcripcion,
+      ficha,
       marketing,
-      copy: marketing ? marketing.descripcion + '\n\n' + marketing.hashtags.join(' ') : '',
+      copy: ficha ? ficha.descripcion : marketing ? marketing.descripcion + '\n\n' + marketing.hashtags.join(' ') : '',
       cta: marketing ? marketing.cta : '',
     });
     exito = true;
@@ -228,19 +337,68 @@ export async function procesarClip(trabajo, signal) {
     let segmentos;
     let pasada = 0;
     let reiniciado = false;
+    let palabrasFuente = null;
 
     if (trabajo.auto && video.duracion) {
       const historial = await leerHistorial(video.id);
       pasada = historial.pasadas;
-      const plan = planificarSegmentos({
-        duracionVideo: video.duracion,
-        historial: historial.rangos,
-        pasada,
-        semilla: video.id,
-        cantidad: trabajo.cantidad,
-      });
+      let plan = null;
+
+      // 2a. Curaduria local: se transcribe el video completo una vez y el curador cruza el texto con el diccionario.
+      if (AJUSTES.activo && video.duracion <= AJUSTES.maxVideoSeg) {
+        try {
+          const inicioAsr = Date.now();
+          avanzarJob('Transcribiendo video completo', 30);
+          palabrasFuente = await transcribirFuente(video, dirTrabajo, {
+            signal,
+            onProgreso: (fraccion) => avanzarJob('Transcribiendo video completo', 30 + fraccion * 25),
+          });
+          registrarTiempo(id, 'transcripcion-completa', inicioAsr);
+
+          avanzarJob('Analizando contenido', 55);
+          const curar = (rangos) => curarVideo({
+            palabras: palabrasFuente,
+            duracionVideo: video.duracion,
+            historial: rangos,
+            cantidad: trabajo.cantidad,
+            tituloVideo: video.titulo,
+            semilla: video.id,
+          });
+          let curado = curar(historial.rangos);
+          // Video "agotado": ya no quedan momentos libres. Se abre un ciclo nuevo (sin historial) y se avisa.
+          if (curado.clips.length === 0 && historial.rangos.length > 0 && palabrasFuente.length > 0) {
+            curado = curar([]);
+            reiniciado = curado.clips.length > 0;
+          }
+          if (curado.clips.length > 0) {
+            plan = { segmentos: curado.clips, faltantes: Math.max(0, curado.objetivo - curado.clips.length) };
+            logger.info('Curaduria completada', { id, clips: curado.clips.length, frases: curado.frases, candidatos: curado.candidatos });
+          }
+        } catch (error) {
+          if (signal && signal.aborted) throw error;
+          store.registrarIncidencia(
+            'warn',
+            'La curaduria local no pudo analizar "' + video.titulo + '": se usa el planificador de cortes',
+            'curador',
+            detalleDeError(error)
+          );
+          palabrasFuente = null;
+        }
+      }
+
+      // 2b. Planificador por franjas (sin voz, curador desactivado, video muy largo o curaduria sin resultados).
+      if (!plan) {
+        plan = planificarSegmentos({
+          duracionVideo: video.duracion,
+          historial: historial.rangos,
+          pasada,
+          semilla: video.id,
+          cantidad: trabajo.cantidad,
+        });
+        reiniciado = plan.reiniciado;
+      }
+
       segmentos = plan.segmentos;
-      reiniciado = plan.reiniciado;
       if (reiniciado) {
         store.registrarIncidencia(
           'info',
@@ -272,9 +430,17 @@ export async function procesarClip(trabajo, signal) {
     }
 
     // 3. Un registro de clip por segmento: el primero reutiliza el del trabajo, el resto se crean.
+    // Los clips curados ya llevan su ficha (con revisionTecnica "pendiente") antes de renderizarse.
     const total = segmentos.length;
     const registros = segmentos.map((segmento, i) => {
-      const base = { titulo: video.titulo + etiquetaSegmento(i + 1, total), segmento: { indice: i + 1, total, inicio: segmento.inicio, duracion: segmento.duracion } };
+      const ficha = segmento.ficha
+        ? { ...segmento.ficha, revisionTecnica: armarRevisionTecnica({ modo: trabajo.modo, duracion: segmento.duracion }) }
+        : null;
+      const base = {
+        titulo: video.titulo + etiquetaSegmento(i + 1, total),
+        segmento: { indice: i + 1, total, inicio: segmento.inicio, duracion: segmento.duracion },
+        ficha,
+      };
       if (i === 0) {
         store.actualizar(id, { ...base, etapa: total > 1 ? 'En cola (clip 1/' + total + ')' : 'En cola' });
         return store.buscar(id);
@@ -297,6 +463,7 @@ export async function procesarClip(trabajo, signal) {
           indice: i + 1,
           total,
           dirSegmento: path.join(dirTrabajo, 'seg-' + (i + 1)),
+          palabrasFuente,
           signal,
         });
         exitosos.push(segmentos[i]);

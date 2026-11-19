@@ -10,6 +10,21 @@ const RUTA_SEGURA = /^[A-Za-z0-9_\/.\-]+$/;
 const ANCHO = 1080;
 const ALTO = 1920;
 
+// Solo presets ligeros de x264: la instancia de Railway no tiene GPU y comparte CPU con whisper y el seguimiento de rostros.
+const PRESETS_LIGEROS = ['ultrafast', 'superfast', 'veryfast', 'faster'];
+let avisoPreset = false;
+
+/** Devuelve el preset pedido si es ligero; cualquier otro (medium, slow...) se baja a veryfast. */
+export function presetLigero(valor) {
+  const preset = String(valor || '').trim().toLowerCase();
+  if (PRESETS_LIGEROS.includes(preset)) return preset;
+  if (!avisoPreset) {
+    avisoPreset = true;
+    logger.warn('VIDEO_PRESET demasiado pesado para CPU compartida: se usa veryfast', { pedido: valor });
+  }
+  return 'veryfast';
+}
+
 let avisoLogoEmitido = false;
 
 function rutaParaFiltro(ruta) {
@@ -161,6 +176,7 @@ export async function renderizarClip(opciones) {
   const cortesRostro = await analizarCortes(entrada, cortes, desde);
   const filtro = construirFiltro({ modo, subtitulos: rutaAss, fontsDir, logo, cortes: cortesRostro });
   const hilos = String(config.cpuThreads);
+  const preset = presetLigero(config.videoPreset);
 
   // Orden importante: -ss/-i del video, luego -i del logo y despues las opciones de salida (-t, -map...).
   const args = [
@@ -170,7 +186,7 @@ export async function renderizarClip(opciones) {
     '-t', String(largo),
     '-filter_complex', filtro,
     '-map', '[v]', ...(cortes && cortes.length > 0 ? ['-map', '[audio]'] : ['-map', '0:a:0?']),
-    '-c:v', 'libx264', '-preset', config.videoPreset, '-crf', String(config.videoCrf),
+    '-c:v', 'libx264', '-preset', preset, '-crf', String(config.videoCrf),
     '-maxrate', '5000k', '-bufsize', '10000k',
     '-pix_fmt', 'yuv420p', '-fpsmax', '30',
     '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '44100',
@@ -220,5 +236,9 @@ export async function renderizarClip(opciones) {
     alto: medido.alto || null,
     conLogo: Boolean(logo),
     logoOmitido,
+    // Para la revision tecnica del clip (curador.js): analisis de rostros por corte y recursos de CPU usados.
+    analisis: cortesRostro,
+    preset,
+    hilos: Number(hilos),
   };
 }
