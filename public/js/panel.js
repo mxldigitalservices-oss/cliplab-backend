@@ -1,9 +1,10 @@
 import { obtenerEstado, encolarVideo, obtenerIncidencia, guardarCookiesRed, quitarCookiesRed, leerLlave, guardarLlave } from './api.js';
 import * as V from './views.js';
+import * as F from './flujo.js';
 
 const INTERVALO_MS = 4000;
 const INTERVALO_MAX_MS = 30000;
-const VISTAS = ['resumen', 'conexiones', 'clips', 'lotes', 'incidencias', 'marketing'];
+const VISTAS = ['resumen', 'conexiones', 'proyectos', 'clips', 'lotes', 'incidencias', 'marketing'];
 
 const $ = (id) => document.getElementById(id);
 
@@ -56,7 +57,8 @@ function actualizarBotonLlave() {
 function renderContadores() {
   if (!estado.datos) return;
   const { clips, lotes, incidencias } = estado.datos;
-  $('n-clips').textContent = String(clips.length);
+  $('n-clips').textContent = String(clips.filter((c) => c.estado === 'listo' || c.estado === 'publicado').length);
+  F.contadores(estado.datos);
   $('n-lotes').textContent = String(lotes.length);
   $('n-incidencias').textContent = String(incidencias.filter((i) => !i.resuelta).length);
 }
@@ -86,8 +88,9 @@ function renderActual() {
     case 'conexiones':
       $('lista-conexiones').innerHTML = V.renderConexiones(estado.datos.conexiones);
       break;
+    case 'proyectos':
     case 'clips':
-      renderClipsVista();
+      F.render(estado.vista, estado.datos);
       break;
     case 'lotes':
       $('lista-lotes').innerHTML = V.renderLotes(estado.datos.lotes);
@@ -407,20 +410,6 @@ function iniciarIncidencias() {
 /* ---------- Filtros ---------- */
 
 function iniciarFiltros() {
-  $('clip-estado').addEventListener('change', (evento) => {
-    estado.filtroEstado = evento.target.value;
-    if (estado.datos) renderClipsVista();
-  });
-
-  $('clip-buscar').addEventListener('input', (evento) => {
-    clearTimeout(estado.temporizadorBusqueda);
-    const valor = evento.target.value;
-    estado.temporizadorBusqueda = setTimeout(() => {
-      estado.filtroTexto = valor;
-      if (estado.datos) renderClipsVista();
-    }, 150);
-  });
-
   $('inc-ocultar').addEventListener('change', (evento) => {
     estado.ocultarResueltas = evento.target.checked;
     if (estado.datos) {
@@ -447,7 +436,7 @@ function iniciar() {
   });
 
   iniciarLlave();
-  iniciarEncolar();
+  F.iniciar({ mostrarAviso, abrirLlave, sondearYa, activarVista });
   iniciarCopiar();
   iniciarIncidencias();
   iniciarCookiesRedes();

@@ -28,9 +28,40 @@
       </div>
     </header>
 
-    <form id="form-encolar" class="encolar" autocomplete="off">
-      <input id="input-url" type="url" inputmode="url" placeholder="Pega el enlace del video (https://...)" required>
-      <button id="btn-encolar" class="btn btn-primario" type="submit">Encolar</button>
+    <form id="form-encolar" class="crear" autocomplete="off">
+      <div class="crear-fila">
+        <input id="input-url" type="url" inputmode="url" placeholder="Pega el enlace del video (https://...)" required>
+        <button id="btn-encolar" class="btn btn-primario" type="submit">Crear clips</button>
+      </div>
+      <div class="crear-opciones">
+        <label class="campo">Formato
+          <select id="sel-formato" disabled title="El motor siempre exporta en vertical"><option>9:16 vertical</option></select>
+        </label>
+        <label class="campo">Calidad
+          <select id="sel-calidad" disabled title="Resolución fija del motor"><option>1080x1920</option></select>
+        </label>
+        <label class="campo">Encuadre
+          <select id="sel-encuadre" title="Conversación: sigue a quien habla. Plano amplio: video completo sobre fondo desenfocado."></select>
+        </label>
+        <label class="campo">Clips
+          <select id="sel-cantidad" title="Cuántos momentos extraer del video">
+            <option value="auto">Automático (4-5)</option>
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+            <option value="4">4</option><option value="5">5</option>
+          </select>
+        </label>
+        <label class="campo">Subtítulos
+          <select id="sel-subtitulos" disabled title="Estilo único disponible por ahora"><option>Dinámico por palabra</option></select>
+        </label>
+      </div>
+      <details class="proximamente">
+        <summary>Próximamente: subir archivo local e instrucción</summary>
+        <div class="crear-opciones">
+          <label class="campo campo-ancho">Subir archivo local <input type="file" disabled></label>
+          <label class="campo campo-ancho">Qué buscar (opcional) <input type="text" disabled placeholder="Ej.: los momentos donde hablan de precios"></label>
+        </div>
+        <p class="suave">El servidor todavía solo procesa enlaces de YouTube y elige los momentos solo. Estos dos campos se activan cuando el backend los soporte.</p>
+      </details>
     </form>
 
     <p id="aviso" class="aviso" hidden role="status"></p>
@@ -38,7 +69,8 @@
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button class="tab" role="tab" type="button" data-vista="resumen">Resumen</button>
       <button class="tab" role="tab" type="button" data-vista="conexiones">Conexiones</button>
-      <button class="tab" role="tab" type="button" data-vista="clips">Clips <span id="n-clips" class="contador">0</span></button>
+      <button class="tab" role="tab" type="button" data-vista="proyectos">Proyectos <span id="n-proyectos" class="contador">0</span></button>
+      <button class="tab" role="tab" type="button" data-vista="clips">Todos los clips <span id="n-clips" class="contador">0</span></button>
       <button class="tab" role="tab" type="button" data-vista="lotes">Lotes / Variantes <span id="n-lotes" class="contador">0</span></button>
       <button class="tab" role="tab" type="button" data-vista="incidencias">Incidencias <span id="n-incidencias" class="contador">0</span></button>
       <button class="tab" role="tab" type="button" data-vista="marketing">Marketing y Analiticas</button>
@@ -57,18 +89,29 @@
         <div id="lista-conexiones" class="grid"></div>
       </section>
 
+      <section id="vista-proyectos" class="vista" data-vista="proyectos" role="tabpanel" hidden>
+        <div id="proy-toolbar" class="toolbar">
+          <input id="proy-buscar" type="search" placeholder="Buscar proyecto..." aria-label="Buscar proyectos">
+          <span id="proy-contador" class="suave">0 proyectos</span>
+        </div>
+        <div id="lista-proyectos"></div>
+      </section>
+
       <section id="vista-clips" class="vista" data-vista="clips" role="tabpanel" hidden>
         <div class="toolbar">
-          <select id="clip-estado" aria-label="Filtrar por estado">
-            <option value="todos">Todos</option>
-            <option value="procesando">Procesando</option>
-            <option value="listo">Listos</option>
-            <option value="publicado">Publicados</option>
-            <option value="error">Con error</option>
+          <input id="clips-buscar" type="search" placeholder="Buscar por título o lo que se dice..." aria-label="Buscar clips">
+          <div class="segmento" role="group" aria-label="Filtro">
+            <button class="btn" type="button" data-filtro="todos" aria-pressed="true">Todos</button>
+            <button class="btn" type="button" data-filtro="favoritos" aria-pressed="false">Me gustan <span id="clips-favs" class="contador">0</span></button>
+          </div>
+          <select id="clips-orden" aria-label="Ordenar">
+            <option value="recientes">Más recientes</option>
+            <option value="puntaje">Mejor puntaje</option>
           </select>
-          <input id="clip-buscar" type="search" placeholder="Buscar por titulo o transcripcion..." aria-label="Buscar clips">
+          <span id="clips-contador" class="suave">0 clips</span>
+          <span id="clips-chip-proyecto" class="chip-filtro" hidden>Solo un proyecto <button type="button" data-accion="quitar-proyecto" aria-label="Quitar filtro de proyecto">&times;</button></span>
         </div>
-        <div id="lista-clips" class="grid"></div>
+        <div id="lista-flujo-clips"></div>
       </section>
 
       <section id="vista-lotes" class="vista" data-vista="lotes" role="tabpanel" hidden>
@@ -110,6 +153,20 @@
       <div class="dlg-acciones">
         <button id="red-cancelar" class="btn" type="button">Cancelar</button>
         <button id="red-guardar" class="btn btn-primario" type="submit">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-editar">
+    <form id="form-editar" autocomplete="off">
+      <h2>Editar clip</h2>
+      <p>Los cambios se guardan solo en este navegador; el video y la ficha del servidor no se modifican.</p>
+      <label class="campo-bloque">Título <input id="ed-titulo" type="text" maxlength="120"></label>
+      <label class="campo-bloque">Descripción para publicar <textarea id="ed-desc" class="area-cookies" rows="8"></textarea></label>
+      <div class="dlg-acciones">
+        <button id="ed-restaurar" class="btn" type="button">Restaurar original</button>
+        <button id="ed-cancelar" class="btn" type="button">Cancelar</button>
+        <button class="btn btn-primario" type="submit">Guardar</button>
       </div>
     </form>
   </dialog>
