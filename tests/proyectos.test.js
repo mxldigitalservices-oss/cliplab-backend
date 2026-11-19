@@ -129,3 +129,46 @@ test('slug y formatoSeg', () => {
   assert.equal(P.formatoSeg(65.4), '1:05');
   assert.equal(P.formatoSeg(null), '—');
 });
+
+test('prepararEncolar: instruccion y estilo de subtitulos viajan en el cuerpo', () => {
+  const r = P.prepararEncolar({ url: 'https://youtu.be/x', instruccion: '  momentos   de   precios ', estiloSubtitulos: 'Clasico' });
+  assert.deepEqual(r.cuerpo, { url: 'https://youtu.be/x', modo: 'recorte', estiloSubtitulos: 'clasico', instruccion: 'momentos de precios' });
+  assert.equal(P.prepararEncolar({ url: 'https://youtu.be/x', instruccion: '   ' }).cuerpo.instruccion, undefined);
+  assert.equal(P.prepararEncolar({ url: 'https://youtu.be/x', instruccion: 'a'.repeat(500) }).cuerpo.instruccion.length, P.INSTRUCCION_MAX);
+  for (const estilo of Object.keys(P.ESTILOS_SUBTITULOS)) assert.equal(P.prepararEncolar({ url: 'https://a.b', estiloSubtitulos: estilo }).ok, true);
+  assert.equal(P.prepararEncolar({ url: 'https://a.b', estiloSubtitulos: 'neon' }).ok, false);
+});
+
+test('prepararEncolar: archivo local reemplaza al enlace (nunca ambos) y valida la extension', () => {
+  const archivo = { name: 'Entrevista.MOV', size: 10 };
+  const r = P.prepararEncolar({ url: '', archivo, modo: 'blur', cantidad: '2', instruccion: 'ahorro', estiloSubtitulos: 'minimal' });
+  assert.equal(r.ok, true);
+  assert.equal(r.archivo, archivo);
+  assert.deepEqual(r.cuerpo, { modo: 'blur', cantidad: 2, estiloSubtitulos: 'minimal', instruccion: 'ahorro' });   // sin url
+  assert.equal(P.prepararEncolar({ url: 'https://a.b', archivo }).ok, false);
+  assert.equal(P.prepararEncolar({ archivo: { name: 'notas.txt' } }).ok, false);
+  assert.equal(P.prepararEncolar({ archivo: { name: 'sin-extension' } }).ok, false);
+  for (const ext of P.EXTENSIONES_VIDEO) assert.equal(P.prepararEncolar({ archivo: { name: 'v' + ext } }).ok, true);
+  assert.equal(P.prepararEncolar({}).ok, false);
+});
+
+test('instruccion y origen: se leen del clip y se agrupan por proyecto', () => {
+  const clips = [
+    { id: 'a', jobId: 'a', estado: 'listo', creadoEn: '2026-01-01', origen: 'archivo', instruccion: 'precios', estiloSubtitulos: 'clasico', titulo: 'entrevista.mp4 (clip 1/2)', ficha: { puntaje: 60, instruccion: { texto: 'precios', coincide: true } } },
+    { id: 'b', jobId: 'a', estado: 'listo', creadoEn: '2026-01-01', origen: 'archivo', instruccion: 'precios', estiloSubtitulos: 'clasico', ficha: { puntaje: 50, instruccion: { texto: 'precios', coincide: false } } },
+    { id: 'c', jobId: 'c', estado: 'listo', creadoEn: '2026-01-02', ficha: { puntaje: 40 } },
+  ];
+  assert.equal(P.instruccionDe(clips[0]), 'precios');
+  assert.equal(P.instruccionDe({ ficha: { instruccion: { texto: 'x' } } }), 'x');
+  assert.equal(P.instruccionDe(clips[2]), '');
+  assert.deepEqual([P.coincideInstruccion(clips[0]), P.coincideInstruccion(clips[1]), P.coincideInstruccion(clips[2])], [true, false, null]);
+  assert.equal(P.estiloDe(clips[0]), 'Clásico');
+  assert.equal(P.esArchivoLocal(clips[0]), true);
+  const [reciente, proyecto] = P.agruparProyectos(clips);
+  assert.equal(reciente.instruccion, '');
+  assert.equal(proyecto.instruccion, 'precios');
+  assert.equal(proyecto.coinciden, 1);
+  assert.equal(proyecto.origen, 'archivo');
+  assert.equal(proyecto.estilo, 'Clásico');
+  assert.equal(P.filtrarProyectos([reciente, proyecto], 'precios').length, 1);
+});

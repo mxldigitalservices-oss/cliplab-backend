@@ -49,6 +49,11 @@ export function agregarTrabajo(trabajo) {
   despertar();
 }
 
+/** Copia de los trabajos que esperan turno (para pruebas y diagnostico). */
+export function trabajosPendientes() {
+  return pendientes.map((trabajo) => ({ ...trabajo }));
+}
+
 export function cargaActual() {
   return pendientes.length + (controladorActual ? 1 : 0);
 }

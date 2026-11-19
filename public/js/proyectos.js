@@ -9,6 +9,16 @@ export const ENCUADRES = Object.freeze({
 
 export const CANTIDAD_MAX = 5;
 
+// Mismos valores que valida el backend (src/estilos-subtitulos.js y src/upload.js).
+export const ESTILOS_SUBTITULOS = Object.freeze({
+  dinamico: 'Dinámico por palabra',
+  clasico: 'Clásico',
+  minimal: 'Minimal',
+});
+export const ESTILO_DEFECTO = 'dinamico';
+export const EXTENSIONES_VIDEO = Object.freeze(['.mp4', '.mov', '.mkv', '.webm']);
+export const INSTRUCCION_MAX = 300;
+
 export const BLOQUES = Object.freeze([
   { clave: 'gancho', etiqueta: 'Gancho' },
   { clave: 'flujo', etiqueta: 'Flujo' },
@@ -68,6 +78,24 @@ export function descripcionDe(clip, ediciones = {}) {
   if (editada) return editada;
   if (clip.ficha && clip.ficha.descripcion) return clip.ficha.descripcion;
   return clip.copy || '';
+}
+
+/** Instruccion ("que buscar") con la que se creo el clip o su proyecto ('' si no hubo). */
+export function instruccionDe(clip) {
+  const texto = (clip && clip.instruccion) || (clip && clip.ficha && clip.ficha.instruccion && clip.ficha.instruccion.texto) || '';
+  return String(texto).trim();
+}
+
+/** true si el curador marco este clip como coincidente con la instruccion; null si no hubo instruccion. */
+export function coincideInstruccion(clip) {
+  const i = clip && clip.ficha && clip.ficha.instruccion;
+  return i ? Boolean(i.coincide) : null;
+}
+
+export const esArchivoLocal = (clip) => Boolean(clip) && clip.origen === 'archivo';
+
+export function estiloDe(clip) {
+  return (clip && ESTILOS_SUBTITULOS[clip.estiloSubtitulos]) || '';
 }
 
 export function ganchoDe(clip) {
@@ -161,6 +189,10 @@ export function agruparProyectos(clips) {
       id,
       titulo: base.titulo || base.fuente || 'Proyecto',
       fuente: base.fuente || '',
+      origen: base.origen || 'url',
+      instruccion: instruccionDe(base),
+      estilo: estiloDe(base),
+      coinciden: lista.filter((c) => coincideInstruccion(c) === true).length,
       creadoEn: creado,
       clips: lista,
       total: lista.length,
@@ -180,7 +212,7 @@ export function filtrarProyectos(proyectos, texto) {
   const q = normalizarTexto(texto);
   if (!q) return proyectos;
   return proyectos.filter((p) =>
-    normalizarTexto([p.titulo, p.fuente, ...p.clips.map((c) => (c.ficha && c.ficha.titulo) || '')].join(' ')).includes(q)
+    normalizarTexto([p.titulo, p.fuente, p.instruccion, ...p.clips.map((c) => (c.ficha && c.ficha.titulo) || '')].join(' ')).includes(q)
   );
 }
 
@@ -208,14 +240,32 @@ export function filtrarClipsFlujo(clips, opciones = {}) {
   return lista.sort((a, b) => String(b.creadoEn).localeCompare(String(a.creadoEn)) || posicion(a) - posicion(b));
 }
 
-/** Valida el formulario de creacion y arma el cuerpo de POST /api/panel/encolar (url, modo, cantidad). */
-export function prepararEncolar({ url, modo, cantidad } = {}) {
+const extensionDe = (nombre) => {
+  const n = String(nombre || '').toLowerCase();
+  const punto = n.lastIndexOf('.');
+  return punto < 0 ? '' : n.slice(punto);
+};
+
+/**
+ * Valida el formulario de creacion y arma lo que acepta POST /api/panel/encolar.
+ * Entrada: { url, modo, cantidad, instruccion, estiloSubtitulos, archivo } (archivo = File | null).
+ * Salida: { ok, cuerpo, archivo? }. `cuerpo` lleva los campos de texto; `archivo` solo existe si se eligio uno,
+ * y entonces la peticion va como multipart/form-data (el backend no admite URL y archivo a la vez).
+ */
+export function prepararEncolar({ url, modo, cantidad, instruccion, estiloSubtitulos, archivo } = {}) {
   const enlace = String(url || '').trim();
-  if (!/^https?:\/\//i.test(enlace)) return { ok: false, error: 'Pega un enlace válido que empiece con https://' };
+  const hayArchivo = Boolean(archivo);
+  if (hayArchivo && enlace) return { ok: false, error: 'Usa un enlace o un archivo, no ambos.' };
+  if (hayArchivo && !EXTENSIONES_VIDEO.includes(extensionDe(archivo.name))) {
+    return { ok: false, error: 'Formato no permitido: usa mp4, mov, mkv o webm.' };
+  }
+  if (!hayArchivo && !/^https?:\/\//i.test(enlace)) {
+    return { ok: false, error: 'Pega un enlace válido que empiece con https:// o elige un archivo de video.' };
+  }
   const m = modo || 'recorte';
   if (!Object.hasOwn(ENCUADRES, m)) return { ok: false, error: 'Elige un encuadre válido.' };
 
-  const cuerpo = { url: enlace, modo: m };
+  const cuerpo = hayArchivo ? { modo: m } : { url: enlace, modo: m };
   if (cantidad !== undefined && cantidad !== null && cantidad !== '' && cantidad !== 'auto') {
     const n = Number(cantidad);
     if (!Number.isInteger(n) || n < 1 || n > CANTIDAD_MAX) {
@@ -223,5 +273,15 @@ export function prepararEncolar({ url, modo, cantidad } = {}) {
     }
     cuerpo.cantidad = n;
   }
-  return { ok: true, cuerpo };
+
+  const estilo = String(estiloSubtitulos ?? '').trim().toLowerCase();
+  if (estilo) {
+    if (!Object.hasOwn(ESTILOS_SUBTITULOS, estilo)) return { ok: false, error: 'Elige un estilo de subtítulos válido.' };
+    cuerpo.estiloSubtitulos = estilo;
+  }
+
+  const texto = String(instruccion ?? '').replace(/\s+/g, ' ').trim();
+  if (texto) cuerpo.instruccion = texto.slice(0, INSTRUCCION_MAX);
+
+  return hayArchivo ? { ok: true, cuerpo, archivo } : { ok: true, cuerpo };
 }

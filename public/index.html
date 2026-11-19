@@ -51,17 +51,18 @@
           </select>
         </label>
         <label class="campo">Subtítulos
-          <select id="sel-subtitulos" disabled title="Estilo único disponible por ahora"><option>Dinámico por palabra</option></select>
+          <select id="sel-subtitulos" title="Dinámico: mayúsculas y resalte palabra por palabra. Clásico: blanco con contorno. Minimal: texto pequeño sobre caja translúcida."></select>
         </label>
       </div>
-      <details class="proximamente">
-        <summary>Próximamente: subir archivo local e instrucción</summary>
-        <div class="crear-opciones">
-          <label class="campo campo-ancho">Subir archivo local <input type="file" disabled></label>
-          <label class="campo campo-ancho">Qué buscar (opcional) <input type="text" disabled placeholder="Ej.: los momentos donde hablan de precios"></label>
-        </div>
-        <p class="suave">El servidor todavía solo procesa enlaces de YouTube y elige los momentos solo. Estos dos campos se activan cuando el backend los soporte.</p>
-      </details>
+      <div class="crear-opciones">
+        <label class="campo campo-ancho">O sube un archivo local (mp4, mov, mkv, webm)
+          <input id="input-archivo" type="file" accept=".mp4,.mov,.mkv,.webm,video/mp4,video/quicktime,video/x-matroska,video/webm">
+        </label>
+        <label class="campo campo-ancho">Qué buscar (opcional)
+          <input id="input-instruccion" type="text" maxlength="300" placeholder="Ej.: los momentos donde hablan de precios">
+        </label>
+      </div>
+      <p id="archivo-info" class="suave" hidden></p>
     </form>
 
     <p id="aviso" class="aviso" hidden role="status"></p>

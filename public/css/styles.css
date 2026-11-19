@@ -213,7 +213,9 @@ body { background: radial-gradient(1200px 500px at 50% -120px, rgba(124, 107, 25
 .campo select:disabled, .campo input:disabled { opacity: .55; cursor: not-allowed; }
 .campo-ancho { flex: 1 1 260px; }
 .campo-bloque { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; color: var(--suave); font-size: 12px; }
-.proximamente summary { cursor: pointer; color: var(--suave); font-size: 12px; margin-bottom: 8px; }
+.instruccion-proyecto { margin: 6px 0 0; font-size: 12px; color: var(--suave); }
+.instruccion-proyecto b { color: var(--texto); font-weight: 600; }
+.badge-instruccion { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
 .toolbar .segmento { display: flex; gap: 0; }
 .segmento .btn { border-radius: 0; }

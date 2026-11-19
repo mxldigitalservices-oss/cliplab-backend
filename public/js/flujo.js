@@ -3,8 +3,9 @@
 import { encolarVideo } from './api.js';
 import { esc, formatoFecha } from './views.js';
 import {
-  ENCUADRES, agruparProyectos, filtrarProyectos, filtrarClipsFlujo, bloquesDe, revisionDe, nivelDe,
+  ENCUADRES, ESTILOS_SUBTITULOS, ESTILO_DEFECTO, INSTRUCCION_MAX, agruparProyectos, filtrarProyectos, filtrarClipsFlujo, bloquesDe, revisionDe, nivelDe,
   puntajeDe, tituloDe, descripcionDe, ganchoDe, formatoSeg, slug, prepararEncolar, esTerminado,
+  instruccionDe, coincideInstruccion, esArchivoLocal, estiloDe,
 } from './proyectos.js';
 
 const LS_FAV = 'cliplab.favoritos';
@@ -76,6 +77,20 @@ function chipsBloques(clip) {
   ).join('') + '</div>';
 }
 
+/** "Qué buscar" con el que se creó el proyecto (vacío si no hubo). */
+function lineaInstruccion(texto, coinciden = null, total = 0) {
+  if (!texto) return '';
+  const resumen = coinciden === null ? '' : ' · ' + coinciden + (coinciden === 1 ? ' clip coincide' : ' clips coinciden') + (total ? ' de ' + total : '');
+  return '<p class="instruccion-proyecto">Qué buscar: <b>' + esc(texto) + '</b>' + esc(resumen) + '</p>';
+}
+
+/** Insignia de un clip: coincide (o no) con la instruccion. Sin instruccion no muestra nada. */
+function insigniaInstruccion(clip) {
+  const c = coincideInstruccion(clip);
+  if (c === null) return '';
+  return c ? badge('Coincide con lo que buscabas', 'ok') : badge('Sin coincidencia directa', 'neutro');
+}
+
 /* ---------- Proyectos ---------- */
 
 function tarjetaProyecto(p) {
@@ -92,7 +107,9 @@ function tarjetaProyecto(p) {
     '</div>' +
     '<div class="card-cab"><h3>' + esc(p.titulo) + '</h3>' + mejor + '</div>' +
     '<div class="meta"><span>' + p.listos + (p.listos === 1 ? ' clip generado' : ' clips generados') + '</span>' +
-      '<span>Duración ' + esc(formatoSeg(p.duracionTotal)) + '</span><span>' + esc(formatoFecha(p.creadoEn)) + '</span></div>' +
+      '<span>Duración ' + esc(formatoSeg(p.duracionTotal)) + '</span><span>' + esc(formatoFecha(p.creadoEn)) + '</span>' +
+      (p.origen === 'archivo' ? '<span>Archivo local</span>' : '') + (p.estilo ? '<span>Subtítulos: ' + esc(p.estilo) + '</span>' : '') + '</div>' +
+    lineaInstruccion(p.instruccion, p.instruccion ? p.coinciden : null, p.listos) +
     '<div class="card-acciones">' + (estados[p.estado] || '') +
       '<button class="btn btn-primario" type="button" data-accion="abrir-proyecto" data-id="' + esc(p.id) + '">Abrir proyecto</button></div>' +
   '</article>';
@@ -104,6 +121,7 @@ function miniClip(clip) {
   return '<article class="mini">' +
     '<div class="visor visor-mini">' + video(clip, 'v916') + '<span class="dur">' + esc(formatoSeg(clip.duracion)) + '</span></div>' +
     '<div class="mini-cab"><strong>' + esc(tituloDe(clip, e.ediciones)) + '</strong>' + insigniaPuntaje(clip) + '</div>' +
+    insigniaInstruccion(clip) +
     '<p class="mini-gancho">' + (ganchoDe(clip) ? '“' + esc(ganchoDe(clip)) + '”' : '<span class="suave">Sin gancho detectado</span>') + '</p>' +
     chipsBloques(clip) +
   '</article>';
@@ -116,7 +134,9 @@ function htmlProyectos(clips) {
     return '<div class="detalle-cab"><button class="btn" type="button" data-accion="cerrar-proyecto">← Proyectos</button>' +
         '<div><h2>' + esc(abierto.titulo) + '</h2><div class="meta"><span>' + abierto.listos + ' de ' + abierto.total + ' clips listos</span>' +
         '<span>Duración ' + esc(formatoSeg(abierto.duracionTotal)) + '</span>' +
-        (abierto.fuente ? '<a href="' + esc(urlLocal(abierto.fuente)) + '" target="_blank" rel="noopener noreferrer">Ver video original</a>' : '') + '</div></div>' +
+        (urlLocal(abierto.fuente) ? '<a href="' + esc(urlLocal(abierto.fuente)) + '" target="_blank" rel="noopener noreferrer">Ver video original</a>' : '') +
+        (abierto.origen === 'archivo' ? '<span>Archivo local</span>' : '') + (abierto.estilo ? '<span>Subtítulos: ' + esc(abierto.estilo) + '</span>' : '') + '</div>' +
+        lineaInstruccion(abierto.instruccion, abierto.instruccion ? abierto.coinciden : null, abierto.listos) + '</div>' +
         '<button class="btn" type="button" data-accion="ver-clips" data-id="' + esc(abierto.id) + '">Ver en Todos los clips</button></div>' +
       '<div class="fila-clips">' + abierto.clips.map(miniClip).join('') + '</div>';
   }
@@ -150,6 +170,7 @@ function tarjetaClip(clip) {
       '<button class="fav" type="button" data-accion="fav" data-id="' + esc(clip.id) + '" aria-pressed="' + fav + '" title="' + (fav ? 'Quitar de Me gustan' : 'Me gusta') + '">' + (fav ? '★' : '☆') + '</button></div></div>' +
     '<div class="visor">' + video(clip, 'v916') + '<span class="dur">' + esc(formatoSeg(clip.duracion)) + '</span></div>' +
     '<div class="meta"><span>' + esc(formatoFecha(clip.creadoEn)) + '</span><a href="#" data-accion="ver-clips" data-id="' + esc(proyecto) + '">Mismo proyecto</a></div>' +
+    (instruccionDe(clip) ? '<div class="card-acciones">' + insigniaInstruccion(clip) + '</div>' + lineaInstruccion(instruccionDe(clip)) : '') +
     '<div class="bloques">' + bloquesDe(clip).map((b) =>
       '<div class="bloque nivel-' + b.nivel + '"><div class="bloque-cab"><strong>' + esc(b.etiqueta) + '</strong><span>' + (b.puntaje === null ? '—' : Math.round(b.puntaje)) + '</span></div>' +
       '<div class="barra"><span style="width:' + (b.puntaje === null ? 0 : Math.round(b.puntaje)) + '%"></span></div>' +
@@ -364,21 +385,59 @@ function iniciarEditor() {
 function iniciarCrear() {
   const select = $('sel-encuadre');
   select.innerHTML = Object.entries(ENCUADRES).map(([valor, texto]) => '<option value="' + esc(valor) + '">' + esc(texto) + '</option>').join('');
+  const estilos = $('sel-subtitulos');
+  estilos.innerHTML = Object.entries(ESTILOS_SUBTITULOS).map(([valor, texto]) => '<option value="' + esc(valor) + '">' + esc(texto) + '</option>').join('');
+  estilos.value = ESTILO_DEFECTO;
+  $('input-instruccion').maxLength = INSTRUCCION_MAX;
+
+  // Enlace y archivo son excluyentes: con archivo elegido el enlace se deshabilita (y deja de ser obligatorio).
+  const sincronizarOrigen = () => {
+    const archivo = $('input-archivo').files[0] || null;
+    const url = $('input-url');
+    url.disabled = Boolean(archivo);
+    url.required = !archivo;
+    if (archivo) url.value = '';
+    const info = $('archivo-info');
+    info.hidden = !archivo;
+    info.textContent = archivo ? 'Archivo elegido: ' + archivo.name + ' (' + (archivo.size / 1048576).toFixed(1) + ' MB). Para usar un enlace, quita el archivo.' : '';
+  };
+  $('input-archivo').addEventListener('change', sincronizarOrigen);
 
   $('form-encolar').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const entrada = prepararEncolar({ url: $('input-url').value, modo: select.value, cantidad: $('sel-cantidad').value });
+    const archivo = $('input-archivo').files[0] || null;
+    const entrada = prepararEncolar({
+      url: $('input-url').value,
+      modo: select.value,
+      cantidad: $('sel-cantidad').value,
+      instruccion: $('input-instruccion').value,
+      estiloSubtitulos: estilos.value,
+      archivo,
+    });
     if (!entrada.ok) {
       e.ayudas.mostrarAviso(entrada.error, 'error', 6000);
       return;
     }
     const boton = $('btn-encolar');
+    const textoBoton = boton.textContent;
     boton.disabled = true;
+    if (entrada.archivo) {
+      boton.textContent = 'Subiendo…';
+      e.ayudas.mostrarAviso('Subiendo el archivo: no cierres esta pestaña hasta que termine.', 'info', 0);
+    }
     try {
       const { url, ...opciones } = entrada.cuerpo;
-      await encolarVideo(url, opciones);
+      await encolarVideo(url, opciones, entrada.archivo || null);
       $('input-url').value = '';
-      e.ayudas.mostrarAviso('Proyecto en cola: el sistema elegirá los mejores momentos.', 'ok');
+      $('input-archivo').value = '';
+      $('input-instruccion').value = '';
+      sincronizarOrigen();
+      e.ayudas.mostrarAviso(
+        entrada.cuerpo.instruccion
+          ? 'Proyecto en cola: el sistema buscará lo que pediste y completará con los mejores momentos.'
+          : 'Proyecto en cola: el sistema elegirá los mejores momentos.',
+        'ok'
+      );
       e.abierto = '';
       e.ayudas.activarVista('proyectos', false);
       e.ayudas.sondearYa();
@@ -387,6 +446,7 @@ function iniciarCrear() {
       e.ayudas.mostrarAviso('No se pudo crear el proyecto: ' + error.message, 'error', 6000);
     } finally {
       boton.disabled = false;
+      boton.textContent = textoBoton;
     }
   });
 }

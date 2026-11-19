@@ -1,5 +1,6 @@
 import { config } from '../config/index.js';
 import { generarMarketing } from './marketing.js';
+import { parsear as parsearInstruccion, puntuarTexto, bonus as bonusInstruccion } from '../instruccion.js';
 import {
   INDICE, STOP, FRASES_GANCHO, DEPENDIENTES, DEPENDIENTES_BI, RELLENOS, CONTRASTE, pesoDe, normalizar,
 } from './diccionario.js';
@@ -452,7 +453,9 @@ export function curarVideo({
   minClips = config.segmentsMin,
   maxClips = config.segmentsMax,
   separacion = 3,
+  instruccion = null,
 } = {}) {
+  const consulta = parsearInstruccion(instruccion);
   const ctx = prepararContexto(palabras);
   const F = ctx.frases;
   const ultimo = ctx.palabras.length ? ctx.palabras[ctx.palabras.length - 1].fin : 0;
@@ -483,8 +486,18 @@ export function curarVideo({
     if (mejor) candidatos.push(mejor);
   }
 
+  // "Que buscar": la instruccion solo sube la prioridad de los candidatos que coinciden (el puntaje de la ficha no cambia).
+  if (consulta) {
+    for (const c of candidatos) {
+      const r = puntuarTexto(ctx.palabras.slice(F[c.a].i0, F[c.b].i1 + 1).map((p) => p.texto).join(' '), consulta);
+      c.bonus = bonusInstruccion(r);
+      c.coincidencias = r.hits;
+    }
+  }
+  const rangoDe = (c) => c.ev.puntaje + (c.bonus || 0);
+
   // Seleccion voraz por puntaje (desempate por posicion): sin solapes entre si ni con el historial.
-  const orden = [...candidatos].sort((x, y) => y.ev.puntaje - x.ev.puntaje || x.inicio - y.inicio);
+  const orden = [...candidatos].sort((x, y) => rangoDe(y) - rangoDe(x) || y.ev.puntaje - x.ev.puntaje || x.inicio - y.inicio);
   const elegidos = [];
   for (const c of orden) {
     if (elegidos.length >= objetivo) break;
@@ -494,18 +507,16 @@ export function curarVideo({
 
   const ranking = new Map(elegidos.map((c, i) => [c, i + 1]));
   const cronologicos = [...elegidos].sort((x, y) => x.inicio - y.inicio);
-  const clips = cronologicos.map((c, i) => ({
-    inicio: r2(c.inicio),
-    duracion: r2(c.fin - c.inicio),
-    fin: r2(c.fin),
-    puntaje: c.ev.puntaje,
-    ficha: construirFicha(ctx, c.a, c.b, {
+  const clips = cronologicos.map((c, i) => {
+    const ficha = construirFicha(ctx, c.a, c.b, {
       tituloVideo,
       semilla: semilla + '|' + Math.round(c.inicio),
       indice: i + 1,
       total: cronologicos.length,
       ranking: ranking.get(c),
-    }),
-  }));
+    });
+    if (consulta) ficha.instruccion = { texto: consulta.texto, coincide: (c.bonus || 0) > 0, coincidencias: c.coincidencias || [] };
+    return { inicio: r2(c.inicio), duracion: r2(c.fin - c.inicio), fin: r2(c.fin), puntaje: c.ev.puntaje, ficha };
+  });
   return { clips, objetivo, frases: F.length, candidatos: candidatos.length };
 }

@@ -36,13 +36,16 @@ function buscar(id) {
   return datos.clips.find((clip) => clip.id === id) || null;
 }
 
-function encolar(url) {
+function encolar(url, extra = {}) {
   const marca = ahora();
   const clip = {
     id: nuevoId('clip'),
     jobId: null,
     titulo: url,
     fuente: url,
+    origen: extra.origen || 'url',
+    instruccion: extra.instruccion || null,
+    estiloSubtitulos: extra.estiloSubtitulos || null,
     url: null,
     estado: 'procesando',
     etapa: 'En cola',

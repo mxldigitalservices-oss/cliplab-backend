@@ -13,6 +13,8 @@ import { generarMarketing } from './marketing.js';
 import { ajustarAFrases, cortesEnCaliente, planDePlanos } from './editorial.js';
 import { AJUSTES, curarVideo, fichaDeVentana, armarRevisionTecnica } from './curador.js';
 import { detalleDeError } from '../utils/run.js';
+import { borrarUpload } from '../upload.js';
+import { construirAssEstilo } from '../estilos-subtitulos.js';
 
 let avisoLogo = false;
 
@@ -230,7 +232,17 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
     avanzar('Generando subtitulos', 56);
     let subtitulos = null;
     if (palabras.length > 0) {
-      subtitulos = await escribirAss(palabras, path.join(dirSegmento, 'subtitulos.ass'));
+      const rutaAss = path.join(dirSegmento, 'subtitulos.ass');
+      if (trabajo.estiloSubtitulos) {
+        // Estilo elegido en el panel (dinamico | clasico | minimal); sin estilo se conserva el subtitulado de siempre.
+        await fs.writeFile(rutaAss, construirAssEstilo(
+          palabras.map((p) => ({ t: p.texto, i: p.inicio, f: p.fin })),
+          { estilo: trabajo.estiloSubtitulos, ancho: 1080, alto: 1920, fuente: config.subtitleFont, tamano: 96, margenV: 560 }
+        ), 'utf8');
+        subtitulos = rutaAss;
+      } else {
+        subtitulos = await escribirAss(palabras, rutaAss);
+      }
     } else {
       store.registrarIncidencia(
         'warn',
@@ -326,10 +338,18 @@ export async function procesarClip(trabajo, signal) {
     // 1. Descarga unica del video fuente (0-30 % del primer clip)
     const marca = Date.now();
     avanzarJob('Descargando video', 2);
-    const video = await descargarVideo(trabajo.url, dirTrabajo, {
-      signal,
-      onProgreso: (fraccion) => avanzarJob('Descargando video', 2 + fraccion * 28),
-    });
+    // Con archivo local ya validado (upload.js) no hay descarga: se usa tal cual.
+    const video = trabajo.archivo
+      ? {
+        id: path.basename(trabajo.archivo.ruta, path.extname(trabajo.archivo.ruta)),
+        duracion: trabajo.archivo.duracion,
+        archivo: trabajo.archivo.ruta,
+        titulo: trabajo.archivo.nombreOriginal || 'Archivo local',
+      }
+      : await descargarVideo(trabajo.url, dirTrabajo, {
+        signal,
+        onProgreso: (fraccion) => avanzarJob('Descargando video', 2 + fraccion * 28),
+      });
     store.actualizar(id, { titulo: video.titulo });
     registrarTiempo(id, 'descarga', marca);
 
@@ -363,6 +383,7 @@ export async function procesarClip(trabajo, signal) {
             cantidad: trabajo.cantidad,
             tituloVideo: video.titulo,
             semilla: video.id,
+            instruccion: trabajo.instruccion,
           });
           let curado = curar(historial.rangos);
           // Video "agotado": ya no quedan momentos libres. Se abre un ciclo nuevo (sin historial) y se avisa.
@@ -399,6 +420,16 @@ export async function procesarClip(trabajo, signal) {
       }
 
       segmentos = plan.segmentos;
+      if (trabajo.instruccion) {
+        const conCoincidencia = segmentos.filter((s) => s.ficha && s.ficha.instruccion && s.ficha.instruccion.coincide).length;
+        if (!conCoincidencia) {
+          store.registrarIncidencia(
+            'info',
+            'Ningun momento de "' + video.titulo + '" coincide con "' + trabajo.instruccion + '": se eligieron los mejores momentos del video',
+            'pipeline'
+          );
+        }
+      }
       if (reiniciado) {
         store.registrarIncidencia(
           'info',
@@ -495,5 +526,6 @@ export async function procesarClip(trabajo, signal) {
     }
   } finally {
     await fs.rm(dirTrabajo, { recursive: true, force: true });
+    if (trabajo.archivo) await borrarUpload(trabajo.archivo.ruta);   // el archivo subido ya no hace falta
   }
 }

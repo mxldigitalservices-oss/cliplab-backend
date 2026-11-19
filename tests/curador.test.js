@@ -172,3 +172,29 @@ test('render: solo presets ligeros de CPU (veryfast/faster); lo pesado se baja a
   for (const p of ['ultrafast', 'veryfast', 'faster']) assert.equal(presetLigero(p), p);
   for (const p of ['medium', 'slow', 'veryslow', '', undefined, 'x']) assert.equal(presetLigero(p), 'veryfast');
 });
+
+test('instruccion ("que buscar"): sube la prioridad de los momentos que coinciden y lo anota en la ficha', () => {
+  // Hay dos bloques "calientes". Sin instruccion con cantidad 1 gana uno; si lo pedido solo aparece en el otro, gana ese.
+  const base = entrada({ cantidad: 1 });
+  const c = charla();
+  const objetivo = c.frases[72];
+  const palabras = c.palabras.map((p) => ({ ...p }));
+  palabras.filter((p) => p.inicio >= objetivo.inicio - 0.01 && p.inicio <= objetivo.fin)
+    .slice(0, 3).forEach((p, i) => { p.texto = ['zanahoria', 'morada', 'organica'][i]; });
+  const cubre = (clip) => clip.inicio <= objetivo.inicio && clip.fin >= objetivo.fin;
+
+  const sin = curarVideo({ ...base, palabras }).clips[0];
+  assert.equal(cubre(sin), false, 'sin instruccion se elige otro momento');
+  assert.equal(sin.ficha.instruccion, undefined, 'sin instruccion la ficha no cambia');
+
+  const con = curarVideo({ ...base, palabras, instruccion: 'zanahoria morada organica' }).clips[0];
+  assert.equal(cubre(con), true, 'con instruccion se elige el tramo pedido');
+  assert.equal(con.ficha.instruccion.coincide, true);
+  assert.deepEqual([...con.ficha.instruccion.coincidencias].sort(), ['morada', 'organica', 'zanahoria']);
+  assert.equal(con.ficha.instruccion.texto, 'zanahoria morada organica');
+});
+
+test('instruccion vacia o solo palabras vacias: resultado identico al de siempre', () => {
+  assert.deepEqual(curarVideo(entrada({ instruccion: '   ' })), curarVideo(entrada()));
+  assert.deepEqual(curarVideo(entrada({ instruccion: 'busca los momentos de' })), curarVideo(entrada()));
+});
