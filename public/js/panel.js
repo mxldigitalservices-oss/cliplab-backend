@@ -464,12 +464,49 @@ iniciar();
 
 const __pubCont = document.getElementById("panel-publicador-ui");
 if (__pubCont) {
+  const __barraClip = document.createElement("div");
+  __barraClip.style.cssText = "margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#16161d;border:1px solid #2b2b38;border-radius:12px;padding:12px 16px;max-width:980px;color:#e8e8ee;font-family:system-ui,sans-serif;";
+  __barraClip.innerHTML = "<label for=\"sel-clip-pub\" style=\"font-size:13px;color:#a9a9bd;font-weight:600;\">Clip listo a publicar:</label><select id=\"sel-clip-pub\" style=\"flex:1;min-width:240px;background:#1f1f2b;border:1px solid #3a3a4d;color:#e8e8ee;border-radius:8px;padding:9px 10px;\"><option value=\"\">Cargando clips...</option></select>";
+  __pubCont.parentNode.insertBefore(__barraClip, __pubCont);
+  const __selClip = document.getElementById("sel-clip-pub");
+
+  async function __cargarClipsPublicador() {
+    try {
+      const r = await fetch("/api/panel/estado");
+      const d = await r.json();
+      const lista = (d.clips || d.items || []).filter((c) => c && (c.id || c._id));
+      const actual = __selClip.value;
+      if (!lista.length) {
+        __selClip.innerHTML = "<option value=\"\">No hay clips listos todavía</option>";
+        return;
+      }
+      __selClip.innerHTML = lista.map((c) => {
+        const id = String(c.id || c._id);
+        const tit = String(c.titulo || c.title || c.nombre || id).slice(0, 70);
+        return "<option value=\"" + id.replace(/"/g, "&quot;") + "\">" + tit + " (" + id + ")</option>";
+      }).join("");
+      if (actual && [...__selClip.options].some((o) => o.value === actual)) __selClip.value = actual;
+      window.__CLIP_SELECCIONADO_ID__ = __selClip.value;
+      __selClip.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch {}
+  }
+
   const __pubInst = montarPublicador(__pubCont, {
-    obtenerClipId: () => window.__CLIP_SELECCIONADO_ID__ ?? "",
+    obtenerClipId: () => __selClip.value || window.__CLIP_SELECCIONADO_ID__ || "",
     intervaloMs: 5000,
   });
+
+  __selClip.addEventListener("change", () => {
+    window.__CLIP_SELECCIONADO_ID__ = __selClip.value;
+    __pubInst.actualizar();
+  });
+
+  __cargarClipsPublicador();
   document.addEventListener("click", (ev) => {
     const t = ev.target.closest("[data-vista=\"publicador\"]");
-    if (t && __pubInst) __pubInst.actualizar();
+    if (t) {
+      __cargarClipsPublicador();
+      __pubInst.actualizar();
+    }
   });
 }
