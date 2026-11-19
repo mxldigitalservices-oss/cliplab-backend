@@ -90,7 +90,7 @@ export function crearRitmoHumano({ azar = Math.random, dormir = (ms) => new Prom
 
 /** Descripcion final: texto + etiquetas que aun no estan dentro del texto (limpias, sin repetir, con tope de longitud). */
 export function armarTexto(descripcion, etiquetas, { maxCaracteres = 2200, maxEtiquetas = 15 } = {}) {
-  const base = String(descripcion || '').trim();
+  const base = String(descripcion ?? '').trim();
   const presentes = new Set((base.match(/#[\p{L}\p{N}_]+/gu) || []).map((h) => h.toLowerCase()));
   const nuevas = [];
   for (const crudo of Array.isArray(etiquetas) ? etiquetas : []) {
@@ -448,11 +448,12 @@ export async function publicarClip(clip, o = {}) {
     timeouts: { pasoMs: 30000, subidaMs: 180000, ...(o.timeouts || {}) },
     reloj,
   };
-  const material = { rutaVideo: clip.rutaVideo, texto: armarTexto(clip.descripcion, clip.etiquetas) };
+  const descEfectiva = clip.descripcion ?? clip.description ?? clip.resumen ?? clip.summary ?? clip.caption ?? clip.titulo ?? clip.title ?? "";
+  const material = { rutaVideo: clip.rutaVideo, texto: armarTexto(descEfectiva, clip.etiquetas) };
 
   try {
     for (const [i, red] of plataformas.entries()) {
-      if (i > 0) await humano.pausa(...(o.pausaEntreRedes || [8000, 30000]));
+      if (i > 0) await humano.pausa(...(o.pausaEntreRedes || [1000, 2500]));
       resultados[red] = await publicarEnRed(red, material, ctx);
     }
   } finally {

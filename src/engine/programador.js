@@ -353,7 +353,7 @@ export function crearProgramador(o = {}) {
     // Sesgo a esperas cortas con cola larga + pausa larga ocasional + jitter de segundos: sin intervalos repetitivos.
     let espera = cfg.gapMinMs + (cfg.gapMaxMs - cfg.gapMinMs) * Math.pow(azar(), 1.3);
     if (azar() < cfg.probPausaLarga) espera += cfg.pausaLargaMinMs + (cfg.pausaLargaMaxMs - cfg.pausaLargaMinMs) * azar();
-    espera += Math.floor(azar() * 45000);
+    espera += Math.floor(azar() * 3000);
     return Math.round(espera);
   }
 
