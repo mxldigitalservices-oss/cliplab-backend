@@ -6,6 +6,7 @@ import { agregarTrabajo, cargaActual } from '../engine/cola.js';
 import { parsearUrlYoutube, segundosDesdeUrl } from '../utils/youtube.js';
 import { subidaOpcional, origenDeEncolar, descartarSubida } from '../upload.js';
 import { sanear } from '../instruccion.js';
+import { sanearAjustes } from '../ajustes.js';
 import { AUTO, pedirEstilo, pedirModo } from '../engine/rotacion-flujo.js';
 
 const router = Router();
@@ -38,6 +39,7 @@ router.get('/incidencias/:id', (req, res) => {
 // Acepta JSON { url, ... } o multipart/form-data con el campo "archivo" (mp4, mov, mkv, webm) y los mismos campos de texto.
 // Ademas: instruccion (que buscar, opcional), estiloSubtitulos (dinamico | clasico | minimal) y modo (recorte | blur).
 // estiloSubtitulos y modo vacios o "auto" rotan de forma ciclica (sin repetir hasta agotar la tanda); un valor manual se respeta.
+// `ajustes` (opcional): velocidad, tono, color, encuadre, espejo y logo propio (ver src/ajustes.js).
 router.post('/encolar', subida, async (req, res, next) => {
   try {
     const cuerpo = req.body || {};
@@ -82,6 +84,12 @@ router.post('/encolar', subida, async (req, res, next) => {
       return await rechazar(error.message);
     }
     const instruccion = sanear(cuerpo.instruccion);
+    let ajustes = null;
+    try {
+      ajustes = sanearAjustes(cuerpo.ajustes);             // velocidad, tono, color, encuadre, espejo, logo (opcional)
+    } catch (error) {
+      return await rechazar(error.message);
+    }
 
     if (cargaActual() >= config.maxQueue) {
       await descartarSubida(req);
@@ -97,6 +105,7 @@ router.post('/encolar', subida, async (req, res, next) => {
     const fuente = esArchivo ? origen.nombreOriginal || 'Archivo local' : parsed.toString();
     // Con rotacion el estilo concreto de cada clip se conoce cuando el pipeline planifica los cortes; mientras tanto va vacio.
     const clip = store.encolar(fuente, { origen: origen.tipo, instruccion, estiloSubtitulos: estiloSubtitulos === AUTO ? null : estiloSubtitulos });
+    if (ajustes) store.actualizar(clip.id, { ajustes });
     agregarTrabajo({
       id: clip.id,
       url: esArchivo ? null : parsed.toString(),
@@ -108,6 +117,7 @@ router.post('/encolar', subida, async (req, res, next) => {
       modo,
       instruccion,
       estiloSubtitulos,
+      ajustes,
     });
 
     res.status(201).json({ ok: true, clip });

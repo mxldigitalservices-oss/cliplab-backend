@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js';
 import { store } from '../storage/store.js';
 import { procesarClip } from './pipeline.js';
 import { detalleDeError } from '../utils/run.js';
+import { contextoTrabajo } from '../contexto-trabajo.js';
 
 const pendientes = [];
 let ejecutando = false;
@@ -14,7 +15,7 @@ async function ejecutar(trabajo) {
   logger.info('Trabajo iniciado', { id: trabajo.id, inicio: trabajo.inicio, duracion: trabajo.duracion, modo: trabajo.modo });
 
   try {
-    await procesarClip(trabajo, controlador.signal);
+    await contextoTrabajo.run(trabajo, () => procesarClip(trabajo, controlador.signal));
     logger.info('Trabajo completado', { id: trabajo.id });
   } catch (error) {
     const detalle = detalleDeError(error);

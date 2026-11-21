@@ -4,6 +4,9 @@ import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { run, stderrCompleto } from '../utils/run.js';
 import { analizarCortes, filtroSplit, xRostro } from './sujeto.js';
+import { contextoTrabajo } from '../contexto-trabajo.js';
+import { sanearAjustes, filtroImagen, filtroVelocidadVideo, filtroAudio } from '../ajustes.js';
+import { rutaLogo } from '../logos.js';
 
 const MODOS = new Set(['recorte', 'blur']);
 const RUTA_SEGURA = /^[A-Za-z0-9_\/.\-]+$/;
@@ -65,11 +68,16 @@ function posicionLogo(posicion, margen) {
   return x + ':' + y;
 }
 
-// Cadena de etapas: base (9:16) -> logo (opcional) -> subtitulos (opcional). La ultima etapa se llama [v].
-function construirFiltro({ modo, subtitulos, fontsDir, logo, cortes }) {
+// Cadena de etapas: base (9:16) -> espejo/color -> logo -> logo propio -> subtitulos -> velocidad. La ultima se llama [v].
+// Espejo y color van ANTES del logo y los subtitulos (el texto nunca sale al reves); la velocidad va al final
+// (subtitulos y logos ya estan pintados en los cuadros, asi que siguen sincronizados).
+function construirFiltro({ modo, subtitulos, fontsDir, logo, cortes, imagen = '', logoPropio = null, velocidad = '', audio = '' }) {
   const salidas = ['base'];
+  if (imagen) salidas.push('ajuste');
   if (logo) salidas.push('marca');
+  if (logoPropio) salidas.push('propio');
   if (subtitulos) salidas.push('subs');
+  if (velocidad) salidas.push('vel');
   salidas[salidas.length - 1] = 'v';
 
   let n = 0;
@@ -102,6 +110,7 @@ function construirFiltro({ modo, subtitulos, fontsDir, logo, cortes }) {
       etiquetas.push('[v' + i + '][a' + i + 'x]');
     });
     partes.push(etiquetas.join('') + 'concat=n=' + cortes.length + ':v=1:a=1' + salida() + '[audio]');
+    if (audio) partes.push('[audio]' + audio + '[audiof]');
   } else if (modo === 'blur') {
     partes.push('[0:v]split=2[a][b]');
     partes.push('[a]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=6:2,scale=' + ANCHO + ':' + ALTO + '[fondo]');
@@ -115,6 +124,11 @@ function construirFiltro({ modo, subtitulos, fontsDir, logo, cortes }) {
     );
   }
 
+  if (imagen) {
+    n++;
+    partes.push(entrada() + imagen + salida());
+  }
+
   if (logo) {
     n++;
     let marca = '[1:v]scale=' + config.logoWidth + ':-2,format=rgba';
@@ -123,11 +137,26 @@ function construirFiltro({ modo, subtitulos, fontsDir, logo, cortes }) {
     partes.push(entrada() + '[logo]overlay=' + posicionLogo(config.logoPosition, config.logoMargin) + ':format=auto' + salida());
   }
 
+  if (logoPropio) {
+    n++;
+    const ancho = Math.round((ANCHO * logoPropio.escala) / 2) * 2;
+    partes.push('[' + logoPropio.indice + ':v]scale=' + ancho + ':-2,format=rgba[propio]');
+    // Centro (x, y) en fraccion del cuadro, sin salirse de el: las comas van dentro de comillas simples del filtro.
+    const px = 'min(max(0,' + logoPropio.x + '*W-w/2),W-w)';
+    const py = 'min(max(0,' + logoPropio.y + '*H-h/2),H-h)';
+    partes.push(entrada() + "[propio]overlay=x='" + px + "':y='" + py + "':format=auto" + salida());
+  }
+
   if (subtitulos) {
     n++;
     let filtro = entrada() + 'ass=filename=' + rutaParaFiltro(subtitulos);
     if (fontsDir) filtro += ':fontsdir=' + rutaParaFiltro(fontsDir);
     partes.push(filtro + salida());
+  }
+
+  if (velocidad) {
+    n++;
+    partes.push(entrada() + velocidad + salida());
   }
 
   return partes.join(';');
@@ -156,11 +185,14 @@ async function medirSalida(ruta) {
 }
 
 export async function renderizarClip(opciones) {
-  const { entrada, salida, inicio = 0, duracion, subtitulos = null, modo = 'recorte', onProgreso, signal, logo: opcionLogo, cortes = null } = opciones;
+  const { entrada, salida, inicio = 0, duracion, subtitulos = null, modo = 'recorte', onProgreso, signal, logo: opcionLogo, cortes = null, ajustes: opcionAjustes } = opciones;
 
   const desde = Number(inicio);
   const largo = Math.min(Number(duracion), config.maxClipSeconds);
-  const largoSalida = cortes && cortes.length > 0 ? cortes.reduce((suma, c) => suma + (c.hasta - c.desde), 0) : largo;
+  // Ajustes del clip (velocidad, tono, color, encuadre, espejo, logo propio): los del llamador o, si no hay, los del trabajo en curso.
+  const ajustes = sanearAjustes(opcionAjustes !== undefined ? opcionAjustes : (contextoTrabajo.getStore() || {}).ajustes);
+  const velocidadAj = ajustes ? ajustes.velocidad : 1;
+  const largoSalida = (cortes && cortes.length > 0 ? cortes.reduce((suma, c) => suma + (c.hasta - c.desde), 0) : largo) / velocidadAj;
 
   if (!Number.isFinite(desde) || desde < 0) throw new Error('Inicio de clip invalido');
   if (!Number.isFinite(largo) || largo <= 0) throw new Error('Duracion de clip invalida');
@@ -173,8 +205,22 @@ export async function renderizarClip(opciones) {
   const fontsDir = (await existe(config.fontsDir)) ? path.resolve(config.fontsDir) : null;
   const logo = await resolverLogo(opcionLogo);
   const logoOmitido = opcionLogo === undefined && config.logoEnabled && !logo;
-  const cortesRostro = await analizarCortes(entrada, cortes, desde);
-  const filtro = construirFiltro({ modo, subtitulos: rutaAss, fontsDir, logo, cortes: cortesRostro });
+  // Encuadre manual (centrado o plano amplio): no se mide ni sigue el rostro; "amplio" fuerza el fondo desenfocado.
+  const sinSeguimiento = Boolean(ajustes && ajustes.encuadre !== 'auto' && cortes && cortes.length > 0);
+  const cortesRostro = await analizarCortes(entrada, sinSeguimiento ? cortes.map((c) => ({ ...c, sujeto: null })) : cortes, desde);
+  const modoFinal = ajustes && ajustes.encuadre === 'amplio' ? 'blur' : modo;
+
+  let logoPropio = null;
+  if (ajustes && ajustes.logo) {
+    const ruta = (await rutaLogo(ajustes.logo.id, ajustes.logo.recorteFondo)) || (await rutaLogo(ajustes.logo.id, false));
+    if (ruta) logoPropio = { ...ajustes.logo, ruta, indice: logo ? 2 : 1 };
+    else logger.warn('Logo propio no encontrado: el clip sale sin el', { id: ajustes.logo.id });
+  }
+  const audioAj = filtroAudio(ajustes);
+  const filtro = construirFiltro({
+    modo: modoFinal, subtitulos: rutaAss, fontsDir, logo, cortes: cortesRostro,
+    imagen: filtroImagen(ajustes), logoPropio, velocidad: filtroVelocidadVideo(ajustes), audio: cortes && cortes.length > 0 ? audioAj : '',
+  });
   const hilos = String(config.cpuThreads);
   const preset = presetLigero(config.videoPreset);
 
@@ -183,9 +229,11 @@ export async function renderizarClip(opciones) {
     '-hide_banner', '-loglevel', 'error', '-nostats', '-progress', 'pipe:1', '-y',
     '-ss', String(desde), '-i', entrada,
     ...(logo ? ['-i', logo] : []),
-    '-t', String(largo),
+    ...(logoPropio ? ['-i', logoPropio.ruta] : []),
+    '-t', String(velocidadAj === 1 ? largo : largoSalida),   // con velocidad se corta en la duracion real de salida (sin cola de video sin audio)
     '-filter_complex', filtro,
-    '-map', '[v]', ...(cortes && cortes.length > 0 ? ['-map', '[audio]'] : ['-map', '0:a:0?']),
+    '-map', '[v]', ...(cortes && cortes.length > 0 ? ['-map', audioAj ? '[audiof]' : '[audio]'] : ['-map', '0:a:0?']),
+    ...(audioAj && !(cortes && cortes.length > 0) ? ['-af', audioAj] : []),
     '-c:v', 'libx264', '-preset', preset, '-crf', String(config.videoCrf),
     '-maxrate', '5000k', '-bufsize', '10000k',
     '-pix_fmt', 'yuv420p', '-fpsmax', '30',
@@ -236,6 +284,8 @@ export async function renderizarClip(opciones) {
     alto: medido.alto || null,
     conLogo: Boolean(logo),
     logoOmitido,
+    ajustes,
+    conLogoPropio: Boolean(logoPropio),
     // Para la revision tecnica del clip (curador.js): analisis de rostros por corte y recursos de CPU usados.
     analisis: cortesRostro,
     preset,

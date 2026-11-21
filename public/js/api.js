@@ -112,6 +112,13 @@ async function solicitar(ruta, opciones = {}) {
   return datos;
 }
 
+let proveedorAjustes = null;
+
+/** lote.js registra aqui una funcion que devuelve los ajustes a enviar con cada proyecto nuevo (o null). */
+export function registrarAjustesNuevos(fn) {
+  proveedorAjustes = typeof fn === 'function' ? fn : null;
+}
+
 export function obtenerEstado(signal) {
   return solicitar('/api/panel/estado', { signal });
 }
@@ -119,14 +126,22 @@ export function obtenerEstado(signal) {
 /**
  * Encola un video. Con `archivo` (File) envia multipart/form-data con el campo "archivo" y los demas campos de texto
  * (sin url: el backend acepta enlace o archivo, nunca ambos). Sin archivo envia JSON como siempre.
- * opciones: modo, cantidad, instruccion, estiloSubtitulos (y inicio/duracion).
+ * opciones: modo, cantidad, instruccion, estiloSubtitulos (y inicio/duracion). Si "Aplicar tambien a clips nuevos" esta
+ * activo (lote.js), se agregan los `ajustes` de lote.
  */
-export function encolarVideo(url, opciones = {}, archivo = null) {
+export function encolarVideo(url, opcionesBase = {}, archivo = null) {
+  // "Aplicar tambien a clips nuevos" (lote.js): si hay ajustes activos se envian con cada proyecto nuevo.
+  const ajustes = proveedorAjustes ? proveedorAjustes() : null;
+  const opciones = ajustes && opcionesBase.ajustes === undefined ? { ...opcionesBase, ajustes } : opcionesBase;
   if (!archivo) {
     return solicitar('/api/panel/encolar', { metodo: 'POST', cuerpo: { url, ...opciones } });
   }
   const formulario = new FormData();
   for (const [clave, valor] of Object.entries(opciones)) {
+    if (clave === 'ajustes' && valor && typeof valor === 'object') {
+      formulario.append('ajustes', JSON.stringify(valor));   // multipart solo lleva texto: el backend lo lee como JSON
+      continue;
+    }
     if (valor !== undefined && valor !== null && valor !== '') formulario.append(clave, String(valor));
   }
   formulario.append('archivo', archivo, archivo.name);   // el archivo va al final: los campos de texto llegan antes
@@ -143,4 +158,26 @@ export function guardarCookiesRed(red, cookies) {
 
 export function quitarCookiesRed(red) {
   return solicitar('/api/panel/cookies-redes/' + encodeURIComponent(red), { metodo: 'DELETE' });
+}
+
+/** Sube una foto/logo (png, jpg, webp). Devuelve { logo: { id, ancho, alto, conAlfa, fondoDetectado, fondoColor } }. */
+export function subirLogo(archivo) {
+  const formulario = new FormData();
+  formulario.append('logo', archivo, archivo.name);
+  return solicitar('/api/panel/logo', { metodo: 'POST', formulario, timeoutMs: 60000 });
+}
+
+/** Imagen del logo como URL local (blob): <img> no puede enviar la llave maestra, asi que se pide con fetch. */
+export async function obtenerLogoUrl(id, sinFondo = false) {
+  const cabeceras = {};
+  const llave = leerLlave();
+  if (llave && CABECERA_VALIDA.test(llave)) cabeceras['x-master-key'] = llave;
+  const respuesta = await fetch('/api/panel/logo/' + encodeURIComponent(id) + (sinFondo ? '?sinFondo=1' : ''), { headers: cabeceras, cache: 'no-store' });
+  if (!respuesta.ok) throw new ApiError('No se pudo cargar el logo', respuesta.status);
+  return URL.createObjectURL(await respuesta.blob());
+}
+
+/** "Aplicar a todos": re-renderiza los clips indicados con los ajustes (cada uno sale como clip nuevo). */
+export function aplicarLote(ids, ajustes) {
+  return solicitar('/api/panel/lote/aplicar', { metodo: 'POST', cuerpo: { ids, ajustes } });
 }

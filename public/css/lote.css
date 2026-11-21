@@ -1,0 +1,27 @@
+/* Controles de lote (Todos los clips). Usa las variables de styles.css. */
+.lote { background: var(--panel); border: 1px solid var(--borde); border-radius: var(--radio); padding: 12px 14px; margin-bottom: 14px; display: grid; gap: 12px; }
+.lote-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lote-cab-acc { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.lote-controles { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.lote .segmento { display: flex; flex-wrap: wrap; }
+.lote .btn[aria-pressed="true"] { background: var(--acento); border-color: var(--acento); color: #fff; }
+.lote-pie { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.lote-pie .suave { flex: 1 1 220px; }
+
+.lote-logo summary { cursor: pointer; font-weight: 600; }
+.lote-logo-cuerpo { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+.lote-logo-izq { flex: 1 1 260px; display: grid; gap: 10px; align-content: start; }
+.lote-prev {
+  position: relative; width: 126px; aspect-ratio: 9 / 16; border: 1px solid var(--borde); border-radius: 10px; overflow: hidden;
+  background: conic-gradient(#222b40 25%, #171e30 0 50%, #222b40 0 75%, #171e30 0) 0 0 / 16px 16px; touch-action: none; cursor: grab; flex: none;
+  display: grid; place-items: center;
+}
+.lote-prev:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.lote-prev img { position: absolute; transform: translate(-50%, -50%); max-width: none; pointer-events: none; user-select: none; }
+
+/* Tarjetas: casilla y chips agregados por lote.js */
+.clip.lote-sel-on { outline: 2px solid var(--acento); outline-offset: -1px; }
+.sel-lote { display: flex; align-items: center; gap: 8px; padding: 6px 2px; cursor: pointer; color: var(--suave); font-size: 12px; }
+.sel-lote input { width: 18px; height: 18px; accent-color: var(--acento); }
+.lote-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 6px; }
+.lote-chips .chip { border-color: var(--acento); color: var(--texto); }
