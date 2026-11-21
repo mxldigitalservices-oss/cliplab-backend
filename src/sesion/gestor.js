@@ -134,7 +134,7 @@ export function conSesion(fn) {
 
 async function sondear(rutaCookies) {
   const args = [
-    '--no-warnings', '--no-colors', '--no-playlist', '--skip-download', '--simulate',
+    '--no-warnings', '--no-colors', '--no-playlist', '--skip-download', '--simulate', '--ignore-no-formats-error',
     '--js-runtimes', 'node', '--socket-timeout', '20', '--print', '%(id)s',
   ];
   if (rutaCookies) args.push('--cookies', rutaCookies);
