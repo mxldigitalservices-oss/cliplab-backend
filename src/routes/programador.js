@@ -8,6 +8,7 @@ import { almacenRedis } from "../storage/redis-programador.js";
 import { store } from "../storage/store.js";
 import { config } from "../config/index.js";
 import { requireMasterKey } from "../middleware/auth.js";
+import { diagnosticar } from "../engine/diagnostico.js";
 
 const TOPE_POR_HORA = Number(process.env.PUBLICADOR_TOPE_HORA) || 2;
 
@@ -150,10 +151,20 @@ async function leerRedis() {
 }
 
 async function leerMongo() {
-  const uri = process.env.MONGODB_URI || "";
-  if (!uri) return { configurado: false, conectado: false, detalle: "sin MONGODB_URI (respaldo JSON)" };
-  const backend = programador.estado?.().backend ?? null;
-  return { configurado: true, conectado: backend === "mongo", detalle: backend === "mongo" ? "conectado" : "respaldo JSON activo" };
+  // Lo que cuenta es el almacen REAL del programador (mongo | json), no una variable suelta: ver config/mongo.js
+  try {
+    await programador.cargar();
+    const e = programador.estado?.() ?? {};
+    const m = e.mongo ?? { configurado: false, conectado: false };
+    const detalle = m.conectado
+      ? "conectado"
+      : !m.configurado
+        ? "sin URI (define MONGODB_URI o MONGO_URL); respaldo JSON activo"
+        : "respaldo JSON activo" + (m.error ? " — " + m.error : "");
+    return { ...m, backend: e.backend ?? null, detalle };
+  } catch (e) {
+    return { configurado: false, conectado: false, detalle: mensajeError(e) };
+  }
 }
 
 function resultadoDeRed(red, r) {
@@ -161,6 +172,29 @@ function resultadoDeRed(red, r) {
   const ok = Boolean(rr?.ok);
   return { ok, resultado: rr ?? null, error: ok ? null : mensajeError(rr?.error || rr?.detalle || r?.error || "Falló la publicación") };
 }
+
+router.get(
+  "/api/programador/diagnostico",
+  ah(async (req, res) => {
+    const quiere = (v) => /^(1|true|si|sí)$/i.test(String(v ?? ""));
+    const informe = await diagnosticar({ programador, chromium: quiere(req.query.chromium), almacen: quiere(req.query.almacen) });
+    res.set("Cache-Control", "no-store");
+    res.status(200).json({ success: informe.ok, data: informe, error: informe.ok ? null : "Hay bloques con problemas: revisa chromium, cola y mongo" });
+  })
+);
+
+router.post(
+  "/api/programador/mongo/reconectar",
+  ah(async (req, res) => {
+    try {
+      const r = await programador.reconectarMongo();
+      res.json({ ok: true, ...r, mongo: programador.estado().mongo });
+    } catch (e) {
+      const status = e?.codigo === "MONGO_NO_CONFIGURADO" ? 400 : 502;
+      res.status(status).json({ ok: false, error: mensajeError(e), mongo: programador.estado().mongo });
+    }
+  })
+);
 
 router.get(
   "/api/programador/cola",

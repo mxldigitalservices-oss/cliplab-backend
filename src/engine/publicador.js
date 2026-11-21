@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 import fs from 'node:fs/promises';
 import { logger } from '../utils/logger.js';
+import { opcionesLanzamiento } from './chromium.js';
 
 export const REDES_SOPORTADAS = ['tiktok', 'instagram', 'facebook'];
 
@@ -279,13 +280,10 @@ export async function crearDriverPlaywright({ azar = Math.random, importar = () 
   if (!chromium) throw new ErrorPublicador('DRIVER_NO_DISPONIBLE', 'playwright-core no expone chromium', false);
   let navegador;
   try {
-    navegador = await chromium.launch({
-      headless: true,
-      executablePath: process.env.CHROMIUM_PATH || process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
-      args: ['--no-sandbox'],
-    });
+    // --no-sandbox + --disable-dev-shm-usage (chromium.js): sin el segundo, /dev/shm de Railway (64 MB) cierra Chromium a mitad de subida.
+    navegador = await chromium.launch(opcionesLanzamiento());
   } catch (error) {
-    throw new ErrorPublicador('DRIVER_NO_DISPONIBLE', 'No se pudo abrir Chromium (define CHROMIUM_PATH o instala el navegador): ' + error.message, false);
+    throw new ErrorPublicador('DRIVER_NO_DISPONIBLE', 'No se pudo abrir Chromium: ' + String(error.message).split('\n')[0] + ' (revisa PLAYWRIGHT_BROWSERS_PATH, CHROMIUM_PATH o el diagnostico en /api/programador/diagnostico?chromium=1)', false);
   }
   return {
     tipo: 'playwright',
@@ -423,19 +421,45 @@ export async function publicarClip(clip, o = {}) {
   let leerCookies = o.leerCookies;
   let obligatorias = o.obligatorias;
   if (!leerCookies || !obligatorias) {
-    const modulo = await import('../sesion/cookiesRedes.js');
-    leerCookies ||= modulo.leerCookies;
-    obligatorias ||= Object.fromEntries(Object.entries(modulo.REDES).map(([red, def]) => [red, def.obligatorias]));
+    try {
+      const modulo = await import('../sesion/cookiesRedes.js');
+      leerCookies ||= modulo.leerCookies;
+      obligatorias ||= Object.fromEntries(Object.entries(modulo.REDES).map(([red, def]) => [red, def.obligatorias]));
+    } catch (error) {
+      return marcarTodas(new ErrorPublicador('SESION_ILEGIBLE', 'No se pudo cargar el modulo de sesiones de redes: ' + error.message, false));
+    }
   }
+
+  // La sesion de cada red se comprueba ANTES de abrir el navegador: sin cookies vigentes no hay nada que publicar y
+  // Chromium consume cientos de MB. Cada red sin sesion queda con su mensaje claro; si ninguna tiene, no se lanza Chromium.
+  const sinSesion = new Set();
+  for (const red of plataformas) {
+    if (!REDES_SOPORTADAS.includes(red)) {
+      resultados[red] = fallo(new ErrorPublicador('RED_NO_SOPORTADA', 'Red no soportada: ' + red, false), reloj);
+      sinSesion.add(red);
+      continue;
+    }
+    try {
+      await cookiesDe(red, { leerCookies, obligatorias });
+    } catch (error) {
+      resultados[red] = fallo(error, reloj);
+      sinSesion.add(red);
+    }
+  }
+  const listas = plataformas.filter((red) => !sinSesion.has(red));
+  if (listas.length === 0) return cerrar();
 
   let driver = o.driver;
   let driverPropio = false;
   if (!driver) {
     try {
-      driver = modo === 'seco' ? crearDriverSeco() : await crearDriverPlaywright({ azar: o.azar });
+      const crearDriver = o.crearDriver || (() => crearDriverPlaywright({ azar: o.azar }));
+      driver = modo === 'seco' ? crearDriverSeco() : await crearDriver();
       driverPropio = true;
     } catch (error) {
-      return marcarTodas(error);
+      // Chromium no arranco: las redes que SI tenian sesion quedan con el motivo; las demas conservan el suyo.
+      for (const red of listas) resultados[red] = fallo(error, reloj);
+      return cerrar();
     }
   }
 
@@ -448,14 +472,18 @@ export async function publicarClip(clip, o = {}) {
     timeouts: { pasoMs: 30000, subidaMs: 180000, ...(o.timeouts || {}) },
     reloj,
   };
-  const descEfectiva = clip.descripcion ?? clip.description ?? clip.resumen ?? clip.summary ?? clip.caption ?? clip.titulo ?? clip.title ?? "";
+  // Primera descripcion con texto (una cadena vacia no cuenta): antes un "" publicaba el clip sin descripcion.
+  const descEfectiva = [clip.descripcion, clip.description, clip.resumen, clip.summary, clip.caption, clip.titulo, clip.title].find((v) => String(v ?? '').trim() !== '') ?? '';
   const material = { rutaVideo: clip.rutaVideo, texto: armarTexto(descEfectiva, clip.etiquetas) };
 
   try {
-    for (const [i, red] of plataformas.entries()) {
+    for (const [i, red] of listas.entries()) {
       if (i > 0) await humano.pausa(...(o.pausaEntreRedes || [1000, 2500]));
       resultados[red] = await publicarEnRed(red, material, ctx);
     }
+  } catch (error) {
+    // Garantia de "nunca lanza": lo que no llego a intentarse queda marcado con el motivo, el servidor sigue en pie.
+    for (const red of listas) if (!resultados[red]) resultados[red] = fallo(error, reloj);
   } finally {
     if (driverPropio) await Promise.resolve(driver.cerrar()).catch(() => {});
   }

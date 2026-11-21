@@ -199,7 +199,11 @@ export function montarPublicador(raiz, opciones = {}) {
     const partes = [];
     if (t.porHora != null) partes.push(`Tope: ${t.usadosUltimaHora ?? 0}/${t.porHora} por hora`);
     partes.push(`Redis: ${estado.redis?.conectado ? "conectado" : "sin conexión"}`);
-    partes.push(`MongoDB: ${estado.mongo?.conectado ? "conectado" : "sin conexión"}`);
+    {
+      const m = estado.mongo || {};
+      const motivo = m.conectado ? "" : !m.configurado ? " (sin URI: cola en archivo local)" : " (cola en archivo local)";
+      partes.push(`MongoDB: ${m.conectado ? "conectado" : "sin conexión"}${motivo}`);
+    }
     partes.push(`Última ejecución: ${formatoFecha(estado.ultimaEjecucion)}`);
     if (estado.ultimoError) partes.push(`Último error: ${typeof estado.ultimoError === "string" ? estado.ultimoError : (estado.ultimoError.mensaje ?? estado.ultimoError.message ?? "ver logs")}`);
     info.replaceChildren(...partes.map(p => el("span", { text: p })));

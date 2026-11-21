@@ -18,6 +18,7 @@ import path from 'node:path';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { store } from '../storage/store.js';
+import { resolverMongo, mascararUri } from '../config/mongo.js';
 
 export const PLATAFORMAS = ['tiktok', 'instagram', 'facebook'];
 export const ESTADOS = ['queued', 'running', 'published', 'failed', 'cancelled'];
@@ -154,6 +155,23 @@ function crearAlmacenJson(ruta, obtenerDatos) {
     guardarEstado: volcar,
     agregarHistorial: volcar,
     volcarTodo: volcar,
+    /** Prueba de ida y vuelta real: escribe un archivo junto al JSON, lo lee, lo borra y cuenta lo pendiente en disco. */
+    async sonda() {
+      const inicio = Date.now();
+      const sonda = ruta + '.sonda-' + crypto.randomBytes(4).toString('hex');
+      const marca = crypto.randomBytes(6).toString('hex');
+      await fs.mkdir(path.dirname(ruta), { recursive: true });
+      await fs.writeFile(sonda, marca);
+      const leido = await fs.readFile(sonda, 'utf8');
+      await fs.rm(sonda, { force: true });
+      if (leido !== marca) throw new Error('El disco devolvio datos distintos a los escritos');
+      let enAlmacen = 0;
+      try {
+        const d = JSON.parse(await fs.readFile(ruta, 'utf8'));
+        enAlmacen = (d.jobs || []).filter((j) => j.status === 'queued' || j.status === 'running').length;
+      } catch { /* aun no hay archivo: 0 */ }
+      return { ok: true, ms: Date.now() - inicio, enAlmacen, detalle: ruta };
+    },
     async cerrar() {
       await cadena;
     },
@@ -198,6 +216,19 @@ async function crearAlmacenMongo({ uri, cargarModulo, nombreBd }) {
       guardarEstado: (e) => estado.replaceOne({ _id: 'estado' }, { ...e, _id: 'estado' }, { upsert: true }),
       agregarHistorial: (h) => historial.insertOne({ ...h, _id: h.id }),
       volcarTodo: async () => {},
+      /** Prueba de ida y vuelta real: ping + escribe, lee y borra un documento + cuenta lo pendiente en la cola. */
+      async sonda() {
+        const inicio = Date.now();
+        await bd.command({ ping: 1 });
+        const coleccion = bd.collection('cliplab_sonda');
+        const marca = crypto.randomBytes(6).toString('hex');
+        await coleccion.replaceOne({ _id: 'sonda' }, { _id: 'sonda', marca, en: new Date().toISOString() }, { upsert: true });
+        const leido = await coleccion.findOne({ _id: 'sonda' });
+        await coleccion.deleteOne({ _id: 'sonda' });
+        if (!leido || leido.marca !== marca) throw new Error('MongoDB devolvio un documento distinto al escrito');
+        const enAlmacen = await jobs.countDocuments({ status: { $in: ['queued', 'running'] } });
+        return { ok: true, ms: Date.now() - inicio, enAlmacen, detalle: bd.databaseName || nombreBd || 'bd' };
+      },
       cerrar: () => cliente.close(),
     };
   } catch (error) {
@@ -223,7 +254,15 @@ export function crearProgramador(o = {}) {
   const ahora = o.ahora || Date.now;
   const azar = o.azar || Math.random;
   const rutaJson = o.rutaJson || path.join(config.dataDir, 'programador.json');
-  const mongoUri = o.mongoUri !== undefined ? o.mongoUri : process.env.MONGODB_URI || '';
+  // MONGODB_URI, MONGO_URL (Railway), MONGO_PUBLIC_URL o MONGOHOST/MONGOUSER/MONGOPASSWORD: ver config/mongo.js
+  const mongoCfg = o.mongoUri !== undefined
+    ? { uri: o.mongoUri, fuente: o.mongoUri ? 'opcion' : null, nombreBd: process.env.MONGODB_DB || undefined, problema: null }
+    : resolverMongo(process.env);
+  const mongoUri = mongoCfg.uri;
+  const reintentoMongoMs = o.reintentoMongoMs ?? (Number(process.env.MONGO_REINTENTO_MS) || 300000);
+  let errorMongo = null;
+  let ultimoIntentoMongo = 0;
+  const sinSecretos = (texto) => (mongoUri ? String(texto).split(mongoUri).join(mascararUri(mongoUri)) : String(texto));
   const cargarMongo = o.cargarMongo || (() => import('mongodb'));
   const publicarPorDefecto = async (spec) => (await import('./publicador.js')).publicarClip(spec);
   const publicar = o.publicar || publicarPorDefecto;
@@ -232,6 +271,7 @@ export function crearProgramador(o = {}) {
   let almacen = null;
   let respaldoJson = null;
   let cargada = null;
+  const asegurarCarga = () => (cargada ||= inicializar());
   let temporizador = null;
   let ocupado = false;
   let ejecucionActual = Promise.resolve();
@@ -250,7 +290,8 @@ export function crearProgramador(o = {}) {
       await almacen[operacion](...args);
     } catch (error) {
       if (!almacen || almacen.tipo !== 'mongo') throw error;
-      logger.warn('Fallo MongoDB en el programador: se pasa al respaldo JSON local', { operacion, mensaje: error.message });
+      errorMongo = sinSecretos(error.message);
+      logger.warn('Fallo MongoDB en el programador: se pasa al respaldo JSON local', { operacion, mensaje: errorMongo });
       const roto = almacen;
       almacen = jsonDe();
       Promise.resolve(roto.cerrar()).catch(() => {});
@@ -265,17 +306,62 @@ export function crearProgramador(o = {}) {
 
   async function abrirAlmacen() {
     if (mongoUri) {
+      ultimoIntentoMongo = ahora();
       try {
-        const m = await crearAlmacenMongo({ uri: mongoUri, cargarModulo: cargarMongo, nombreBd: process.env.MONGODB_DB });
-        logger.info('Programador: persistencia en MongoDB');
+        const m = await crearAlmacenMongo({ uri: mongoUri, cargarModulo: cargarMongo, nombreBd: mongoCfg.nombreBd });
+        errorMongo = null;
+        logger.info('Programador: persistencia en MongoDB', { fuente: mongoCfg.fuente, uri: mascararUri(mongoUri), bd: mongoCfg.nombreBd });
         return m;
       } catch (error) {
-        logger.warn('Programador: MongoDB no disponible, se usa el respaldo JSON local', { mensaje: error.message, ruta: rutaJson });
+        errorMongo = sinSecretos(error.message);
+        logger.warn('Programador: MongoDB no disponible, se usa el respaldo JSON local', { mensaje: errorMongo, fuente: mongoCfg.fuente, ruta: rutaJson });
       }
     } else {
-      logger.info('Programador: sin MONGODB_URI, se usa el respaldo JSON local', { ruta: rutaJson });
+      logger.info('Programador: sin URI de MongoDB (MONGODB_URI / MONGO_URL), se usa el respaldo JSON local', { ruta: rutaJson, problema: mongoCfg.problema });
     }
     return jsonDe();
+  }
+
+  /**
+   * Vuelve a intentar MongoDB cuando se arranco con el respaldo JSON (p. ej. el servicio Mongo aun no estaba listo) y
+   * migra lo que hay en memoria: cola, historial y estado. Idempotente (upserts). Lanza si no logra conectar.
+   */
+  async function reconectarMongo() {
+    await asegurarCarga();
+    if (!mongoUri) throw errorCodigo('MONGO_NO_CONFIGURADO', 'No hay URI de MongoDB: define MONGODB_URI o MONGO_URL en las variables del servicio');
+    if (almacen && almacen.tipo === 'mongo') return { backend: 'mongo', migrados: 0, yaConectado: true };
+    ultimoIntentoMongo = ahora();
+    let nuevo;
+    try {
+      nuevo = await crearAlmacenMongo({ uri: mongoUri, cargarModulo: cargarMongo, nombreBd: mongoCfg.nombreBd });
+    } catch (error) {
+      errorMongo = sinSecretos(error.message);
+      throw errorCodigo('MONGO_NO_DISPONIBLE', 'No se pudo conectar a MongoDB: ' + errorMongo);
+    }
+    const volcar = async () => {
+      for (const job of datos.jobs) await nuevo.guardarJob(job);
+      await nuevo.guardarEstado(datos.estado);
+    };
+    await volcar();
+    for (const h of datos.historial) await Promise.resolve(nuevo.agregarHistorial(h)).catch(() => {}); // ya existentes: se ignoran
+    const anterior = almacen;
+    almacen = nuevo;
+    await volcar(); // lo que cambio mientras se migraba y se escribio al respaldo viejo
+    errorMongo = null;
+    if (anterior) await Promise.resolve(anterior.cerrar()).catch(() => {});
+    logger.info('Programador: reconectado a MongoDB y cola migrada', { trabajos: datos.jobs.length });
+    return { backend: 'mongo', migrados: datos.jobs.length, yaConectado: false };
+  }
+
+  /** Prueba de ida y vuelta contra el almacen activo (Mongo o JSON): escribe, lee, borra y cuenta lo pendiente. */
+  async function sonda() {
+    await asegurarCarga();
+    if (!almacen || typeof almacen.sonda !== 'function') throw errorCodigo('SIN_SONDA', 'El almacen activo no soporta la prueba de lectura/escritura');
+    try {
+      return { backend: almacen.tipo, enMemoria: datos.jobs.filter((j) => j.status === 'queued' || j.status === 'running').length, ...(await almacen.sonda()) };
+    } catch (error) {
+      throw errorCodigo('SONDA_FALLO', 'El almacen ' + almacen.tipo + ' no responde: ' + sinSecretos(error.message));
+    }
   }
 
   async function inicializar() {
@@ -475,6 +561,10 @@ export function crearProgramador(o = {}) {
       try {
         await cargada;
         const ms = ahora();
+        // Arranco en JSON aunque hay URI (Mongo no estaba listo): se reintenta cada pocos minutos, sin bloquear el ciclo.
+        if (mongoUri && almacen && almacen.tipo === 'json' && ms - ultimoIntentoMongo >= reintentoMongoMs) {
+          await reconectarMongo().catch((error) => logger.warn('Programador: reintento de MongoDB fallido', { mensaje: error.message }));
+        }
         const decision = evaluar(ms);
         if (decision.sucio) await guardarEstado();
         if (!decision.ok) return { ejecutado: false, motivo: decision.motivo };
@@ -589,6 +679,15 @@ export function crearProgramador(o = {}) {
     return {
       backend: almacen ? almacen.tipo : null,
       rutaJson: almacen && almacen.tipo === 'json' ? rutaJson : null,
+      mongo: {
+        configurado: Boolean(mongoUri),
+        fuente: mongoCfg.fuente,
+        uri: mongoUri ? mascararUri(mongoUri) : null,
+        bd: mongoUri ? mongoCfg.nombreBd ?? null : null,
+        conectado: Boolean(almacen && almacen.tipo === 'mongo'),
+        error: errorMongo,
+        problema: mongoCfg.problema,
+      },
       activo: !detenido,
       ocupado,
       cupoHorario: { usados: ejecucionesEnVentana(ms), maximo: cfg.maxPorVentana },
@@ -623,7 +722,7 @@ export function crearProgramador(o = {}) {
     await cargada;
   }
 
-  return { iniciar, detener, cargar, tick, encolar, cancelar, reintentar, obtener, listar, historial, estado: estadoActual, config: cfg };
+  return { iniciar, detener, cargar, tick, encolar, cancelar, reintentar, obtener, listar, historial, estado: estadoActual, reconectarMongo, sonda, config: cfg };
 }
 
 export const programador = crearProgramador();
