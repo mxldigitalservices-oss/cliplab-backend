@@ -6,7 +6,7 @@ import { run, ComandoError, stderrCompleto } from '../utils/run.js';
 import { parsearUrlYoutube } from '../utils/youtube.js';
 import { conSesion, renovar, esBloqueoAntiBot } from '../sesion/gestor.js';
 
-const FORMATO = 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b/best';
+const FORMATO = 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b/best/bv*/ba';
 const FORMATO_RESPALDO = 'bv*+ba/b/best/bv*/ba';
 const TIMEOUT_MS = 20 * 60 * 1000;
 const PREFIJO_PROGRESO = 'PROGRESO';
@@ -47,6 +47,7 @@ export async function descargarVideo(url, directorio, opciones = {}) {
     '--no-colors',
     '--restrict-filenames',
     '--js-runtimes', 'node',
+  '--extractor-args', 'youtube:player_client=android,web,tv',
     '--concurrent-fragments', '4',
     '--retries', '3',
     '--socket-timeout', '20',
