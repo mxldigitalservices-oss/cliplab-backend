@@ -7,7 +7,7 @@ import { parsearUrlYoutube } from '../utils/youtube.js';
 import { conSesion, renovar, esBloqueoAntiBot } from '../sesion/gestor.js';
 
 const FORMATO = 'bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b/best';
-const FORMATO_RESPALDO = 'best/b';
+const FORMATO_RESPALDO = 'bv*+ba/b/best/bv*/ba';
 const TIMEOUT_MS = 20 * 60 * 1000;
 const PREFIJO_PROGRESO = 'PROGRESO';
 
