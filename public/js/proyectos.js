@@ -58,7 +58,12 @@ export function normalizarTexto(texto) {
 const numero = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 export function puntajeDe(clip) {
-  return numero(clip && clip.ficha && clip.ficha.puntaje);
+  const f = clip && clip.ficha;
+  const total = numero(f && f.puntaje);
+  if (total !== null) return total;
+  // Sin puntaje total pero con bloques puntuados: promedio de los bloques (no se pierde la ficha por un campo vacío).
+  const parciales = f ? BLOQUES.map(({ clave }) => numero(f[clave] && f[clave].puntaje)).filter((n) => n !== null) : [];
+  return parciales.length ? parciales.reduce((a, b) => a + b, 0) / parciales.length : null;
 }
 
 export function nivelDe(puntaje) {
@@ -77,7 +82,10 @@ export function descripcionDe(clip, ediciones = {}) {
   const editada = ediciones[clip.id] && ediciones[clip.id].descripcion;
   if (editada) return editada;
   if (clip.ficha && clip.ficha.descripcion) return clip.ficha.descripcion;
-  return clip.copy || '';
+  if (clip.copy) return clip.copy;
+  const m = clip.marketing;
+  if (m && m.descripcion) return [m.descripcion, m.cta, Array.isArray(m.hashtags) ? m.hashtags.join(' ') : ''].filter(Boolean).join('\n\n');
+  return '';
 }
 
 /** Instruccion ("que buscar") con la que se creo el clip o su proyecto ('' si no hubo). */
@@ -99,7 +107,8 @@ export function estiloDe(clip) {
 }
 
 export function ganchoDe(clip) {
-  return (clip.ficha && clip.ficha.gancho && clip.ficha.gancho.frase) || '';
+  const g = clip.ficha && clip.ficha.gancho;
+  return (g && typeof g === 'object' ? g.frase : g) || clip.gancho || '';
 }
 
 /** Los cuatro bloques de la ficha (Gancho / Flujo / Valor / Interés) con puntaje, nivel y un detalle corto. */

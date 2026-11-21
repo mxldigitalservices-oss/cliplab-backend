@@ -3,6 +3,8 @@
 //       const panel = montarPublicador(document.getElementById("publicador"), { obtenerClipId: () => clipSeleccionado?.id });
 // Si no pasas obtenerClipId, el panel muestra un campo "ID del clip". Ninguna red viene marcada por defecto.
 
+import { leerLlave } from "./api.js";
+
 const REDES = [
   { id: "tiktok", nombre: "TikTok" },
   { id: "instagram", nombre: "Instagram" },
@@ -61,28 +63,49 @@ function inyectarCSS() {
   document.head.append(el("style", { id: "pub-css", text: CSS }));
 }
 
+// Habla con la API con la llave maestra y desempaqueta el envelope { success, data, error }.
+// Éxito parcial (207): success:true, data.parcial:true y data.resultados con el detalle real por red.
 async function api(base, ruta, { method = "GET", body } = {}) {
-  const res = await fetch(base + ruta, {
-    method,
-    credentials: "same-origin",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  let data = null;
-  try { data = await res.json(); } catch { /* sin cuerpo JSON */ }
-  if (!res.ok && res.status !== 207) throw new Error(data?.error || data?.mensaje || data?.message || `Error ${res.status}`);
-  return data ?? {};
+  const cabeceras = { Accept: "application/json" };
+  const llave = leerLlave();
+  if (llave) cabeceras["x-master-key"] = llave;
+  if (body) cabeceras["Content-Type"] = "application/json";
+  let res;
+  try {
+    res = await fetch(base + ruta, { method, headers: cabeceras, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
+  } catch {
+    throw new Error("Sin conexión con el servidor");
+  }
+  let json = null;
+  try { json = await res.json(); } catch { /* sin cuerpo JSON */ }
+  if (res.status === 401) throw new Error("Falta o no coincide la llave maestra: ponla en la pestaña de acceso del panel.");
+  if (!res.ok || (json && json.success === false)) throw new Error((json && json.error) || `Error ${res.status}`);
+  if (json && typeof json === "object" && "success" in json) return { ...(json.data || {}), ...(json.error ? { error: json.error } : {}) };
+  return json ?? {};
 }
 
 function nivelCookie(v) {
-  if (v === true) return "ok";
-  if (v === false) return "mal";
-  const s = String(typeof v === "object" && v ? (v.estado ?? v.ok ?? "") : v ?? "").toLowerCase();
-  if (v && typeof v === "object" && v.ok === true) return "ok";
-  if (/^(ok|activa|activo|valida|válida|conectad|true)/.test(s)) return "ok";
-  if (/(venc|expir|caduc|aviso|por)/.test(s)) return "aviso";
-  if (/(falta|sin|no|invalid|inválid|error|false)/.test(s)) return "mal";
-  return "";
+  const s = String(v && typeof v === "object" ? (v.estado ?? "") : v ?? "").toLowerCase();
+  if (v === true || /^(activa|activo|ok|valida|válida|conectad)/.test(s)) return "ok";
+  if (v === false || /^(expirada|vencida|caducada|sin_sesion|sin sesi|error)/.test(s)) return "mal";
+  return "";   // desconocido
+}
+
+const ESTADOS_COLA = { queued: "En cola", running: "Publicando", published: "Publicado", failed: "Falló", cancelled: "Cancelado" };
+
+// Normaliza un trabajo del programador { id, clipId, platforms[], status, scheduledAt, lastError } a lo que pinta la tabla.
+function itemDeCola(it) {
+  const red = Array.isArray(it.platforms) ? it.platforms.join(", ") : it.red;
+  return {
+    id: it.id ?? it._id,
+    clipId: it.clipId ?? it.clip ?? null,
+    red,
+    redUnica: Array.isArray(it.platforms) && it.platforms.length === 1 ? it.platforms[0] : (it.red ?? null),
+    status: it.status ?? "",
+    estado: ESTADOS_COLA[it.status] ?? it.estado ?? "—",
+    fecha: it.scheduledAt ?? it.fecha ?? it.programadoPara ?? null,
+    error: it.lastError ?? it.error ?? null,
+  };
 }
 
 function formatoFecha(v) {
@@ -190,20 +213,17 @@ export function montarPublicador(raiz, opciones = {}) {
     refrescarBotones();
   }
 
-  function filaCola(it) {
-    const id = it.id ?? it._id;
-    const cid = it.clipId ?? it.clip;
-    const est = String(it.estado ?? "—");
-    const pendiente = /(pendiente|program|cola|espera)/i.test(est);
-    const fallido = /(error|fall)/i.test(est) || !!it.error;
+  function filaCola(crudo) {
+    const it = itemDeCola(crudo);
+    const nombres = it.red ? it.red.split(", ").map((r) => REDES.find((x) => x.id === r)?.nombre ?? r).join(", ") : "—";
     const acciones = el("td", {});
-    if (pendiente && id != null) acciones.append(el("button", { type: "button", class: "pub-btn peq", text: "Cancelar", onclick: () => cancelar(id) }));
-    if (fallido && cid != null && it.red) acciones.append(" ", el("button", { type: "button", class: "pub-btn peq", text: "Reintentar", onclick: () => reintentar(cid, it.red) }));
+    if (it.status === "queued" && it.id != null) acciones.append(el("button", { type: "button", class: "pub-btn peq", text: "Cancelar", onclick: () => cancelar(it.id) }));
+    if ((it.status === "failed" || it.status === "cancelled") && it.id != null) acciones.append(el("button", { type: "button", class: "pub-btn peq", text: "Reintentar", onclick: () => reintentar(it.id) }));
     return el("tr", {},
-      el("td", { text: cid ?? "—" }),
-      el("td", { text: REDES.find(r => r.id === it.red)?.nombre ?? it.red ?? "—" }),
-      el("td", { text: est }),
-      el("td", { text: formatoFecha(it.fecha ?? it.programadoPara) }),
+      el("td", { text: it.clipId ?? "—" }),
+      el("td", { text: nombres }),
+      el("td", { text: it.estado }),
+      el("td", { text: formatoFecha(it.fecha) }),
       el("td", { text: it.error ? String(it.error.mensaje ?? it.error).slice(0, 120) : "" }),
       acciones);
   }
@@ -213,6 +233,7 @@ export function montarPublicador(raiz, opciones = {}) {
       estado = await api(base, "/api/programador/cola");
       pintar();
     } catch (e) { mostrar(`No se pudo leer el estado: ${e.message}`, "err"); }
+    refrescarBotones();   // el clip elegido fuera del módulo (select del panel) también habilita/deshabilita los botones
   }
 
   async function conBloqueo(fn) {
@@ -227,6 +248,7 @@ export function montarPublicador(raiz, opciones = {}) {
       const r = await api(base, `/api/programador/${estado.activo ? "pausar" : "activar"}`, { method: "POST" });
       estado = { ...estado, ...r };
       mostrar(r.activo ? "Publicador encendido." : "Publicador pausado.", "ok");
+      pintar();
     });
   }
 
@@ -239,9 +261,13 @@ export function montarPublicador(raiz, opciones = {}) {
     if (accion === "programar" && campoFecha.value) cuerpo.fecha = new Date(campoFecha.value).toISOString();
     return conBloqueo(async () => {
       const r = await api(base, `/api/clips/${encodeURIComponent(id)}/${accion}`, { method: "POST", body: cuerpo });
-      const malas = (r.resultados || []).filter(x => !x.ok);
-      if (malas.length) mostrar(malas.map(x => `${x.etiqueta}: ${x.error}`).join(" | "), "err");
-      else mostrar(accion === "programar" ? "Programado correctamente." : "Publicado correctamente.", "ok");
+      const lista = r.resultados || [];
+      const malas = lista.filter((x) => !x.ok);
+      const buenas = lista.filter((x) => x.ok).map((x) => x.etiqueta);
+      if (malas.length) {
+        const detalle = malas.map((x) => `${x.etiqueta}: ${x.error}`).join(" | ");
+        mostrar((buenas.length ? `Parcial — OK en ${buenas.join(", ")}. Falló: ` : "Falló: ") + detalle, "err");
+      } else mostrar(accion === "programar" ? "Programado correctamente." : "Publicado correctamente.", "ok");
     });
   }
 
@@ -252,11 +278,10 @@ export function montarPublicador(raiz, opciones = {}) {
     });
   }
 
-  function reintentar(cid, red) {
+  function reintentar(id) {
     return conBloqueo(async () => {
-      const r = await api(base, `/api/clips/${encodeURIComponent(cid)}/programar`, { method: "POST", body: { redes: [red] } });
-      const mala = (r.resultados || []).find(x => !x.ok);
-      mostrar(mala ? `${mala.etiqueta}: ${mala.error}` : "Reprogramado.", mala ? "err" : "ok");
+      await api(base, `/api/programador/${encodeURIComponent(id)}/reintentar`, { method: "POST" });
+      mostrar("Vuelto a encolar.", "ok");
     });
   }
 
@@ -272,6 +297,7 @@ export function montarPublicador(raiz, opciones = {}) {
 
   return {
     actualizar,
+    refrescarBotones,
     seleccion: selector.seleccion,
     destruir() { detenerSondeo(); raiz.replaceChildren(); },
   };

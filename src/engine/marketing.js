@@ -187,15 +187,106 @@ export function generarCopy({ clip = {}, red, redes, hashtagsExtra = [] } = {}) 
   };
 }
 
+// ---------------------------------------------------------------------------
+// Paquete base (sin red): titulo, descripcion, CTA, hashtags y nicho a partir del titulo del video + transcripcion.
+// Lo usan el curador (fichas), el planificador y el pipeline. Es local y determinista (misma semilla -> mismo texto).
+// NO exige red: la red solo se pide en adaptarCopyPorRed / generarCopy (publicacion).
+// ---------------------------------------------------------------------------
+const NICHOS = {
+  negocios: ["negocio", "emprend", "cliente", "venta", "dinero", "empresa", "pesos", "inversi", "ganancia", "marca", "marketing", "precio"],
+  tecnologia: ["tecnolog", "inteligencia artificial", "software", "app", "program", "codigo", "celular", "computador", "internet", "robot"],
+  debate: ["opini", "debate", "pol[ií]tic", "gobierno", "polemic", "verdad", "mentira", "culpa", "discusi"],
+  entretenimiento: ["pel[ií]cula", "serie", "m[uú]sica", "cancion", "famos", "chiste", "risa", "humor", "juego", "show"],
+};
+const HASHTAGS_NICHO = {
+  negocios: ["negocios", "emprendimiento", "dinero", "ventas", "exito"],
+  tecnologia: ["tecnologia", "innovacion", "digital", "futuro", "tips"],
+  debate: ["debate", "opinion", "hablemos", "actualidad", "reflexion"],
+  entretenimiento: ["entretenimiento", "divertido", "momentos", "viral", "humor"],
+  general: ["aprende", "tips", "consejos", "contenido", "motivacion"],
+};
+const CTAS = [
+  "Sígueme para más contenido como este.",
+  "Guarda este clip y compártelo con quien lo necesite.",
+  "Cuéntame en los comentarios qué opinas.",
+  "Si te sirvió, deja tu like y comparte.",
+  "¿Te pasó algo parecido? Escríbelo abajo.",
+  "Activa las notificaciones para no perderte la siguiente parte.",
+];
+const PLANTILLAS_TITULO = [
+  (t) => t,
+  (t) => `${t}: lo que casi nadie te cuenta`,
+  (t) => `Lo esencial de ${t}`,
+  (t) => `Esto cambia cómo ves ${t}`,
+  (t) => `${t}: la idea clave`,
+];
+const MULETILLAS = /^(mira|oye|bueno|pues|entonces|ok|okay|so|look|y|pero|o sea|eh+|mm+|um+)[,\s]+/i;
+
+function hashSemilla(semilla = "") {
+  let h = 2166136261;
+  for (const c of String(semilla)) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+const elegir = (lista, n) => lista[n % lista.length];
+const mayus = (t) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);
+const sinAcentosMk = (t) => String(t ?? "").toLowerCase().replace(/ñ/g, "n").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+function cortarPalabra(texto, max) {
+  const t = limpiarTexto(texto);
+  if (t.length <= max) return t;
+  const corte = t.slice(0, max - 1);
+  const sp = corte.lastIndexOf(" ");
+  return `${(sp > max * 0.6 ? corte.slice(0, sp) : corte).replace(/[\s.,;:]+$/, "")}…`;
+}
+
+function detectarNicho(texto) {
+  const t = sinAcentosMk(texto);
+  let mejor = "general";
+  let max = 0;
+  for (const [nicho, claves] of Object.entries(NICHOS)) {
+    const n = claves.filter((k) => new RegExp(sinAcentosMk(k).replace(/\[i\]/g, "i")).test(t)).length;
+    if (n > max) { max = n; mejor = nicho; }
+  }
+  return mejor;
+}
+
+function ganchoDeTexto(transcripcion) {
+  const frases = dividirOraciones(transcripcion)
+    .map((f) => limpiarTexto(f).replace(MULETILLAS, "").replace(/[.,;:]+$/, ""))
+    .filter((f) => f.split(/\s+/).length >= 4);
+  if (!frases.length) return "";
+  const puntuar = (f) => (/\d/.test(f) ? 2 : 0) + (/\?/.test(f) ? 1 : 0) + (/(error|secreto|nunca|siempre|clave|cuidado|truco|verdad)/i.test(f) ? 2 : 0);
+  const ventana = frases.slice(0, 3);
+  return mayus(ventana.reduce((m, f) => (puntuar(f) > puntuar(m) ? f : m), ventana[0]));
+}
+
+export function generarMarketingBase({ tituloVideo = "", transcripcion = "", semilla = "", indice = 1, total = 1 } = {}) {
+  const tema = limpiarTexto(tituloVideo) || "Clip";
+  const h = hashSemilla(semilla || `${tema}|${indice}`);
+  const gancho = ganchoDeTexto(transcripcion);
+  let titulo = gancho ? cortarPalabra(gancho, 88) : cortarPalabra(elegir(PLANTILLAS_TITULO, h)(tema), 88);
+  if (titulo.length < 11) titulo = cortarPalabra(`${titulo}: lo esencial`, 88);
+  const cta = elegir(CTAS, hashSemilla(`cta|${semilla}|${indice}`));
+  const nicho = detectarNicho(`${tema} ${transcripcion}`);
+  const palabrasTema = sinAcentosMk(tema).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && w.length <= 16).slice(0, 2);
+  const etiquetas = [...new Set([...HASHTAGS_NICHO[nicho], ...palabrasTema, "clips", "parati"].map((x) => x.replace(/[^a-z0-9]/g, "")).filter(Boolean))].slice(0, 8);
+  const hashtags = etiquetas.map((x) => `#${x}`);
+  const parte = total > 1 ? ` (parte ${indice} de ${total})` : "";
+  const descripcion = [titulo, `Mira hasta el final${parte}.`].join("\n\n");
+  return { titulo, descripcion, cta, hashtags, nicho, version: 2, generadoEn: new Date().toISOString() };
+}
+
 export function generarMarketing(entrada = {}) {
+  // Con { clip, red|redes } -> copy adaptado por red (exige red explicita). Sin clip -> paquete base del curador/pipeline.
   if (entrada && typeof entrada === "object" && "clip" in entrada) {
     return generarCopy(entrada);
   }
-  throw new ErrorRed("Especifica { clip, red } o { clip, redes } con tiktok, instagram y/o facebook.");
+  return generarMarketingBase(entrada);
 }
 
 export default {
   REDES,
+  generarMarketingBase,
   construirContextoClip,
   adaptarCopyPorRed,
   generarCopy,

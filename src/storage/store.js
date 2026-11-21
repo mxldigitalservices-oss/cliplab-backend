@@ -1,4 +1,8 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from '../config/index.js';
+import { logger } from '../utils/logger.js';
 
 const PLATAFORMAS = ['tiktok', 'instagram', 'facebook'];
 const LIMITE = 500;
@@ -17,6 +21,89 @@ const datos = {
     ultimaVerificacion: null,
   })),
 };
+
+// ---------------------------------------------------------------------------
+// Persistencia: clips (con ficha, copy y marketing), lotes e incidencias sobreviven a reinicios y redeploys.
+// JSON en dataDir/store.json (en Railway monta un volumen y fija DATA_DIR para que sobreviva al redeploy).
+// Escritura atomica (tmp + rename) y agrupada (debounce). Las conexiones NO se guardan: se re-sincronizan al arrancar.
+//   STORE_FILE=ruta         cambia el archivo
+//   STORE_PERSISTENCIA=off  la desactiva  (en `node --test` esta apagada salvo STORE_PERSISTENCIA=on)
+// ---------------------------------------------------------------------------
+const DEBOUNCE_MS = 1000;
+let temporizadorGuardado = null;
+let sucio = false;
+
+const persistenciaActiva = () =>
+  process.env.STORE_PERSISTENCIA === 'on' || (process.env.STORE_PERSISTENCIA !== 'off' && !process.env.NODE_TEST_CONTEXT);
+const rutaStore = () => process.env.STORE_FILE || path.join(config.dataDir, 'store.json');
+
+function guardarSync() {
+  if (!persistenciaActiva()) return false;
+  const ruta = rutaStore();
+  const tmp = ruta + '.' + process.pid + '.tmp';
+  try {
+    fs.mkdirSync(path.dirname(ruta), { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify({ version: 1, guardadoEn: ahora(), clips: datos.clips, lotes: datos.lotes, incidencias: datos.incidencias }));
+    fs.renameSync(tmp, ruta);
+    sucio = false;
+    return true;
+  } catch (error) {
+    logger.warn('No se pudo guardar el store en disco', { ruta, mensaje: error.message });
+    try { fs.rmSync(tmp, { force: true }); } catch { /* sin tmp */ }
+    return false;
+  }
+}
+
+function marcarSucio() {
+  if (!persistenciaActiva()) return;
+  sucio = true;
+  if (temporizadorGuardado) return;
+  temporizadorGuardado = setTimeout(() => {
+    temporizadorGuardado = null;
+    guardarSync();
+  }, DEBOUNCE_MS);
+  if (temporizadorGuardado.unref) temporizadorGuardado.unref();
+}
+
+function guardarYa() {
+  if (temporizadorGuardado) clearTimeout(temporizadorGuardado);
+  temporizadorGuardado = null;
+  return guardarSync();
+}
+
+/** Carga el store desde disco. Un clip que estaba 'procesando' cuando murio el proceso queda como error (no se reanuda solo). */
+function recargar() {
+  if (!persistenciaActiva()) return false;
+  const ruta = rutaStore();
+  let crudo;
+  try {
+    crudo = JSON.parse(fs.readFileSync(ruta, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') logger.warn('store.json ilegible: se arranca vacio (el archivo original se conserva como .corrupto)', { ruta, mensaje: error.message });
+    if (error.code !== 'ENOENT') { try { fs.renameSync(ruta, ruta + '.corrupto'); } catch { /* sin archivo */ } }
+    return false;
+  }
+  datos.clips = Array.isArray(crudo.clips) ? crudo.clips.filter((c) => c && typeof c === 'object' && c.id) : [];
+  datos.lotes = Array.isArray(crudo.lotes) ? crudo.lotes : [];
+  datos.incidencias = Array.isArray(crudo.incidencias) ? crudo.incidencias : [];
+  let interrumpidos = 0;
+  for (const clip of datos.clips) {
+    if (clip.estado === 'procesando') {
+      Object.assign(clip, { estado: 'error', etapa: 'Interrumpido por reinicio del servidor', actualizadoEn: ahora() });
+      interrumpidos++;
+    }
+  }
+  if (interrumpidos) {
+    datos.incidencias.unshift({
+      id: 'inc_' + crypto.randomBytes(4).toString('hex'), nivel: 'warn', origen: 'sistema', resuelta: false, creadoEn: ahora(), detalle: null,
+      mensaje: interrumpidos + ' clip(s) quedaron a medias por un reinicio del servidor. Vuelve a encolarlos.',
+    });
+    sucio = true;
+  }
+  return true;
+}
+
+process.on('exit', () => { if (sucio) guardarSync(); });
 
 function ahora() {
   return new Date().toISOString();
@@ -64,6 +151,7 @@ function encolar(url, extra = {}) {
   clip.jobId = clip.id;
   datos.clips.unshift(clip);
   recortar(datos.clips);
+  marcarSucio();
   return clip;
 }
 
@@ -92,6 +180,7 @@ function crearHijo(jobId, campos = {}) {
   };
   datos.clips.unshift(clip);
   recortar(datos.clips);
+  marcarSucio();
   return clip;
 }
 
@@ -99,6 +188,7 @@ function actualizar(id, parche) {
   const clip = buscar(id);
   if (!clip) return null;
   Object.assign(clip, parche, { actualizadoEn: ahora() });
+  marcarSucio();
   return clip;
 }
 
@@ -118,6 +208,7 @@ function registrarIncidencia(nivel, mensaje, origen, detalle) {
   };
   datos.incidencias.unshift(incidencia);
   recortar(datos.incidencias, LIMITE_INCIDENCIAS);
+  marcarSucio();
   return incidencia;
 }
 
@@ -163,6 +254,7 @@ function fallarTrabajo(jobId, mensaje, detalle) {
   }
   const nombre = afectados[0] ? afectados[0].titulo : jobId;
   registrarIncidencia('error', 'Clip \"' + nombre + '\": ' + mensaje, 'cola', detalle);
+  marcarSucio();
   return afectados;
 }
 
@@ -174,6 +266,7 @@ function retirarVideo(rutaUrl) {
       clip.actualizadoEn = ahora();
     }
   }
+  marcarSucio();
 }
 
 function snapshot() {
@@ -202,7 +295,11 @@ function snapshot() {
   };
 }
 
+recargar();
+
 export const store = {
+  recargar,
+  guardarYa,
   encolar,
   crearHijo,
   buscar,

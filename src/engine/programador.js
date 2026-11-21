@@ -241,10 +241,15 @@ export function crearProgramador(o = {}) {
   const jsonDe = () => (respaldoJson ||= crearAlmacenJson(rutaJson, () => datos));
 
   async function persistir(operacion, ...args) {
+    if (!almacen) {
+      // Antes de inicializar no hay almacen: se inicializa aqui en vez de fallar con "Cannot read properties of null".
+      cargada ||= inicializar();
+      await cargada;
+    }
     try {
       await almacen[operacion](...args);
     } catch (error) {
-      if (almacen.tipo !== 'mongo') throw error;
+      if (!almacen || almacen.tipo !== 'mongo') throw error;
       logger.warn('Fallo MongoDB en el programador: se pasa al respaldo JSON local', { operacion, mensaje: error.message });
       const roto = almacen;
       almacen = jsonDe();
@@ -498,6 +503,7 @@ export function crearProgramador(o = {}) {
   }
 
   async function encolar(spec = {}) {
+    cargada ||= inicializar();
     await cargada;
     const plataformas = [...new Set((Array.isArray(spec.platforms) ? spec.platforms : []).map((p) => String(p).toLowerCase()))];
     if (plataformas.length === 0) throw errorCodigo('SIN_PLATAFORMAS', 'Indica al menos una plataforma: ' + PLATAFORMAS.join(', '));
@@ -509,7 +515,9 @@ export function crearProgramador(o = {}) {
       if (!Number.isFinite(programadoMs)) throw errorCodigo('FECHA_INVALIDA', 'scheduledAt debe ser una fecha ISO valida');
     }
     const clip = resolverClip(spec);
-    if (spec.clipId && datos.jobs.some((j) => j.clipId === spec.clipId && (j.status === 'queued' || j.status === 'running'))) {
+    // `porRed: true` (copy distinto por red, un trabajo por red): solo choca si comparte alguna plataforma. Sin la marca, igual que siempre.
+    const choca = (j) => !spec.porRed || j.platforms.some((p) => plataformas.includes(p));
+    if (spec.clipId && datos.jobs.some((j) => j.clipId === spec.clipId && (j.status === 'queued' || j.status === 'running') && choca(j))) {
       throw errorCodigo('DUPLICADO', 'El clip ' + spec.clipId + ' ya esta en la cola');
     }
     const marca = iso(ahora());
@@ -540,6 +548,7 @@ export function crearProgramador(o = {}) {
   }
 
   async function cancelar(id) {
+    cargada ||= inicializar();
     await cargada;
     const job = datos.jobs.find((j) => j.id === id);
     if (!job) throw errorCodigo('NO_ENCONTRADO', 'No existe el trabajo ' + id);
@@ -553,6 +562,7 @@ export function crearProgramador(o = {}) {
 
   /** Vuelve a encolar un trabajo fallido/cancelado. Conserva las plataformas que ya salieron bien (no se duplican). */
   async function reintentar(id) {
+    cargada ||= inicializar();
     await cargada;
     const job = datos.jobs.find((j) => j.id === id);
     if (!job) throw errorCodigo('NO_ENCONTRADO', 'No existe el trabajo ' + id);

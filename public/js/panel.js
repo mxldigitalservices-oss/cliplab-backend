@@ -496,53 +496,47 @@ if (__pubCont) {
       .filter(Boolean);
   }
 
+  // Clips listos (o ya publicados en otra red) tomados del estado del panel, con la llave maestra. Nada queda preseleccionado.
   async function __cargarClipsPublicador() {
     try {
       let lista = [];
-      for (const url of ["/api/panel/estado", "/api/clips"]) {
-        const r = await fetch(url).catch(() => null);
-        if (r && r.ok) {
-          const d = await r.json().catch(() => null);
-          lista = __extraerClipsDeObjeto(d).filter((c) => c && (c.id || c._id || c.url));
-          if (lista.length) break;
-        }
-      }
-      if (!lista.length) lista = __extraerClipsDelDom();
+      try {
+        const d = await obtenerEstado();
+        lista = (Array.isArray(d && d.clips) ? d.clips : []).filter((c) => c && c.id && (c.estado === 'listo' || c.estado === 'publicado') && c.url);
+      } catch { /* sin llave o sin conexión: el aviso general del panel ya lo informa */ }
 
       const actual = __selClip.value;
       if (!lista.length) {
         __selClip.innerHTML = "<option value=\"\">No hay clips listos todavía</option>";
+        window.__CLIP_SELECCIONADO_ID__ = "";
+        if (__pubInst) __pubInst.refrescarBotones();
         return;
       }
-      const vistas = new Map();
-      for (const c of lista) {
-        const id = String(c.id || c._id || c.url);
-        if (!vistas.has(id)) {
-          const tit = String(c.titulo || c.title || c.nombre || id).slice(0, 75);
-          vistas.set(id, { id, tit });
-        }
-      }
-      __selClip.innerHTML = [...vistas.values()]
-        .map(({ id, tit }) => "<option value=\"" + id.replace(/"/g, "&quot;") + "\">" + tit.replace(/</g, "&lt;") + " (" + id + ")</option>")
+      const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      __selClip.innerHTML = "<option value=\"\">— Elige un clip —</option>" + lista
+        .map((c) => {
+          const tit = String((c.ficha && c.ficha.titulo) || (c.marketing && c.marketing.titulo) || c.titulo || c.id).slice(0, 75);
+          return "<option value=\"" + esc(c.id) + "\">" + esc(tit) + " (" + esc(c.id) + ")</option>";
+        })
         .join("");
-      if (actual && [...__selClip.options].some((o) => o.value === actual)) __selClip.value = actual;
+      if (actual && [...__selClip.options].some((o) => o.value === actual)) __selClip.value = actual;   // conserva la selección del usuario
       window.__CLIP_SELECCIONADO_ID__ = __selClip.value;
-      __selClip.dispatchEvent(new Event("input", { bubbles: true }));
+      if (__pubInst) __pubInst.refrescarBotones();
     } catch {}
   }
 
-  const __pubInst = montarPublicador(__pubCont, {
+  var __pubInst = montarPublicador(__pubCont, {
     obtenerClipId: () => __selClip.value || window.__CLIP_SELECCIONADO_ID__ || "",
     intervaloMs: 5000,
   });
 
   __selClip.addEventListener("change", () => {
     window.__CLIP_SELECCIONADO_ID__ = __selClip.value;
-    __pubInst.actualizar();
+    __pubInst.refrescarBotones();
   });
 
   __cargarClipsPublicador();
-  setTimeout(__cargarClipsPublicador, 1500);
+  setInterval(() => { if (!document.hidden) __cargarClipsPublicador(); }, 15000);
   document.addEventListener("click", (ev) => {
     const t = ev.target.closest("[data-vista=\"publicador\"], [data-vista=\"clips\"], [data-vista=\"resumen\"]");
     if (t) {
