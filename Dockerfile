@@ -6,6 +6,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
 COPY src ./src
+COPY public ./public
 COPY schema.sql ./
 ENV NODE_OPTIONS=--max-old-space-size=256
 CMD ["node","src/server.js"]
