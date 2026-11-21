@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config/index.js';
-import { run } from '../utils/run.js';
+import { logger } from '../utils/logger.js';
+import { run, ComandoError } from '../utils/run.js';
 
 const ABRE_SIGNO = /^[¿¡"'“‘(\[]+$/u;
 const SOLO_PUNTUACION = /^[\p{P}\p{S}]+$/u;
@@ -44,6 +45,25 @@ export function parsearPalabras(json) {
   return palabras;
 }
 
+let avisoSinWhisper = false;
+
+/** whisper-cli no existe (no se pudo lanzar) o no encuentra su modelo: instalacion incompleta, no un problema del audio. */
+function whisperNoDisponible(error) {
+  if (!(error instanceof ComandoError)) return false;
+  if (!error.codigo && !error.stderr && /No se pudo iniciar|ENOENT/i.test(error.message)) return true;
+  return /failed to (open|load|initialize).*(model|whisper context)|failed to initialize whisper context/i.test(String(error.stderr || ''));
+}
+
+function avisarSinWhisper(motivo) {
+  if (avisoSinWhisper) return;
+  avisoSinWhisper = true;
+  logger.warn('whisper no esta disponible: los clips se generan SIN subtitulos ni transcripcion hasta que se instale', { motivo });
+}
+
+/**
+ * Transcribe el audio a palabras con tiempos. Si whisper o su modelo no estan instalados NO falla el clip: devuelve una
+ * lista vacia (el flujo ya trata "sin voz": se genera el video sin subtitulos) y avisa una sola vez en el log.
+ */
 export async function transcribirAudio(video, directorio, opciones = {}) {
   const { inicio = 0, duracion = 0, idioma = config.whisperLang, signal, onProgreso } = opciones;
 
@@ -68,19 +88,25 @@ export async function transcribirAudio(video, directorio, opciones = {}) {
       }
     };
 
-    await run(config.whisperPath, [
-      '-m', config.whisperModel,
-      '-f', wav,
-      '-l', idioma,
-      '-t', String(config.cpuThreads),
-      '-bs', '1',
-      '-ml', '1',
-      '-sow',
-      '-oj',
-      '-np',
-      '-pp',
-      '-of', base,
-    ], { timeoutMs: 20 * 60 * 1000, signal, onStderrLine: alLineaError });
+    try {
+      await run(config.whisperPath, [
+        '-m', config.whisperModel,
+        '-f', wav,
+        '-l', idioma,
+        '-t', String(config.cpuThreads),
+        '-bs', '1',
+        '-ml', '1',
+        '-sow',
+        '-oj',
+        '-np',
+        '-pp',
+        '-of', base,
+      ], { timeoutMs: 20 * 60 * 1000, signal, onStderrLine: alLineaError });
+    } catch (error) {
+      if (!whisperNoDisponible(error)) throw error;
+      avisarSinWhisper(String(error.stderr || error.message).trim().split('\n').pop());
+      return [];
+    }
 
     const json = JSON.parse(await fs.readFile(rutaJson, 'utf8'));
     return parsearPalabras(json);
