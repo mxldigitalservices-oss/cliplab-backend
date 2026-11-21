@@ -17,6 +17,7 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "multer": "^2.5.0",
+    "playwright-core": "1.65.1",
     "redis": "^6.3.1"
   }
 }

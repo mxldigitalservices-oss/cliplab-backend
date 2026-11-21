@@ -59,6 +59,10 @@ COPY --from=herramientas /opt/fonts /app/fonts
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx playwright-core install --with-deps chromium && rm -rf /var/lib/apt/lists/*
+COPY scripts/check-chromium.mjs ./scripts/check-chromium.mjs
+RUN node scripts/check-chromium.mjs
 
 COPY src ./src
 COPY scripts/sujeto.py ./scripts/sujeto.py
