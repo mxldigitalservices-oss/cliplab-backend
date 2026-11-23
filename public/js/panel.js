@@ -1,3 +1,32 @@
+
+window.__CLJPLAB_GUARD_INSTALLED__ = true;
+window.addEventListener('error', (e) => {
+  try {
+    const syncEl = document.getElementById('sync');
+    const txtEl = document.getElementById('sync-texto');
+    if (syncEl) syncEl.dataset.estado = 'error';
+    if (txtEl) txtEl.textContent = 'Error JS: ' + (e?.message || 'revisar consola');
+  } catch {}
+});
+window.addEventListener('unhandledrejection', (e) => {
+  try {
+    const syncEl = document.getElementById('sync');
+    const txtEl = document.getElementById('sync-texto');
+    if (syncEl) syncEl.dataset.estado = 'error';
+    if (txtEl) txtEl.textContent = 'Error de red/promesa';
+  } catch {}
+});
+setTimeout(() => {
+  try {
+    const txtEl = document.getElementById('sync-texto');
+    const syncEl = document.getElementById('sync');
+    if (txtEl && /conectando/i.test(txtEl.textContent || '')) {
+      if (syncEl) syncEl.dataset.estado = 'listo';
+      txtEl.textContent = 'Listo (revisa Llave si pide)';
+    }
+  } catch {}
+}, 4000);
+
 import { montarPublicador } from "./publicador-ui.js";
 import { obtenerEstado, encolarVideo, obtenerIncidencia, guardarCookiesRed, quitarCookiesRed, leerLlave, guardarLlave } from './api.js';
 import * as V from './views.js';
