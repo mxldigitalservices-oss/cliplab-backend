@@ -269,8 +269,41 @@ function retirarVideo(rutaUrl) {
   marcarSucio();
 }
 
+/** Clips que cumplen `pred` (referencias vivas: no mutarlos; usar actualizar). Incluye archivados. */
+function clipsDonde(pred) {
+  return datos.clips.filter(pred);
+}
+
+/** Saca clips de la bandeja activa sin borrarlos. Nunca archiva uno en proceso. Devuelve cuantos archivo. */
+function archivar(ids) {
+  const set = new Set(ids);
+  const marca = ahora();
+  let n = 0;
+  for (const clip of datos.clips) {
+    if (set.has(clip.id) && !clip.archivadoEn && clip.estado !== 'procesando') {
+      clip.archivadoEn = marca;
+      n += 1;
+    }
+  }
+  if (n) marcarSucio();
+  return n;
+}
+
+function desarchivar() {
+  let n = 0;
+  for (const clip of datos.clips) {
+    if (clip.archivadoEn) {
+      delete clip.archivadoEn;
+      n += 1;
+    }
+  }
+  if (n) marcarSucio();
+  return n;
+}
+
 function snapshot() {
-  const clips = datos.clips;
+  // Los archivados no viajan al panel: menos JSON, menos DOM y menos videos en el navegador.
+  const clips = datos.clips.filter((c) => !c.archivadoEn);
   const hoy = new Date().toISOString().slice(0, 10);
   const enProceso = clips.filter((c) => c.estado === 'procesando');
 
@@ -310,6 +343,9 @@ export const store = {
   completar,
   fallar,
   retirarVideo,
+  clipsDonde,
+  archivar,
+  desarchivar,
   registrarIncidencia,
   snapshot,
 };

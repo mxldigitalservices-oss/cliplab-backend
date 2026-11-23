@@ -9,6 +9,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236d7bff'/%3E%3Cpath d='M12 9l12 7-12 7z' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/lote.css">
+  <link rel="stylesheet" href="/css/envivo.css">
 </head>
 <body>
   <div class="app">
@@ -77,6 +78,7 @@
       <button class="tab" role="tab" type="button" data-vista="incidencias">Incidencias <span id="n-incidencias" class="contador">0</span></button>
       <button class="tab" role="tab" type="button" data-vista="marketing">Marketing y Analiticas</button>
       <button type="button" class="tab" data-vista="publicador" role="tab" aria-selected="false">Programar y Publicar</button>
+      <button type="button" class="tab" data-vista="envivo" role="tab" aria-selected="false">&#128308; En Vivo <span id="n-envivo" class="contador">0</span></button>
     </nav>
 
     <main>
@@ -134,6 +136,9 @@
       <section id="vista-publicador" class="vista" data-vista="publicador" role="tabpanel" hidden>
         <div id="panel-publicador-ui"></div>
       </section>
+      <section id="vista-envivo" class="vista" data-vista="envivo" role="tabpanel" hidden>
+        <div id="panel-envivo"></div>
+      </section>
     </main>
   </div>
 
@@ -180,5 +185,6 @@
   <noscript><p class="aviso">ClipLab Pro necesita JavaScript para funcionar.</p></noscript>
   <script type="module" src="/js/panel.js"></script>
   <script type="module" src="/js/lote.js"></script>
+  <script type="module" src="/js/envivo.js"></script>
 </body>
 </html>

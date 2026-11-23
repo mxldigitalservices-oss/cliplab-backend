@@ -6,6 +6,8 @@ import programadorRouter from './programador.js';
 import sesionRoutes from './sesion.js';
 import cookiesRedesRoutes from './cookies-redes.js';
 import loteRoutes from './lote.js';
+import envivoRoutes from './envivo.js';
+import limpiezaRoutes from './limpieza.js';
 
 const router = Router();
 
@@ -22,6 +24,8 @@ router.use(healthRoutes);
 router.use('/api', statusRoutes);
 router.use('/api/panel/sesion', sesionRoutes);
 router.use('/api/panel/cookies-redes', cookiesRedesRoutes);
+router.use('/api/panel/envivo', envivoRoutes);
+router.use('/api/panel/limpieza', limpiezaRoutes);
 router.use('/api/panel', loteRoutes);
 router.use('/api/panel', panelRoutes);
 router.use(programadorRouter);

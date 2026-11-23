@@ -1,0 +1,16 @@
+/* Panel En Vivo y limpieza de bandeja. Usa las variables de styles.css. */
+.ev-estado { margin: 10px 2px; color: var(--suave); font-size: 14px; }
+.ev-estado[data-estado="grabando"] { color: var(--ok); }
+.ev-estado[data-estado="iniciando"] { color: var(--info); }
+.ev-estado[data-estado="error"] { color: var(--err); }
+.ev-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
+.ev-desc summary { cursor: pointer; color: var(--suave); font-size: 13px; }
+.ev-desc pre { white-space: pre-wrap; margin: 8px 0 0; font: inherit; font-size: 13px; max-height: 180px; overflow: auto; }
+.ev-visor { margin: 12px 0; padding: 10px; border: 1px solid var(--borde); border-radius: var(--radio); background: var(--panel); max-width: 360px; }
+.ev-visor-cab { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px; color: var(--suave); }
+.ev-visor video { width: 100%; max-height: 60vh; border-radius: 8px; background: #000; }
+.ev-mas { text-align: center; margin: 14px 0; }
+.ev-limpieza-clips { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+#ev-aviso { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 50; padding: 10px 16px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--borde); color: var(--texto); font-size: 14px; max-width: 90vw; }
+#ev-aviso[data-tipo="ok"] { border-color: var(--ok); }
+#ev-aviso[data-tipo="error"] { border-color: var(--err); }
