@@ -10,6 +10,7 @@ import { escribirAss } from './subtitles.js';
 import { renderizarClip } from './render.js';
 import { planificarSegmentos, leerHistorial, registrarPasada } from './segmentos.js';
 import { generarMarketing } from './marketing.js';
+import { enriquecerClip } from './cerebro-marketing.js';
 import { ajustarAFrases, cortesEnCaliente, planDePlanos } from './editorial.js';
 import { AJUSTES, curarVideo, fichaDeVentana, armarRevisionTecnica } from './curador.js';
 import { detalleDeError } from '../utils/run.js';
@@ -303,6 +304,17 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
       } catch (errorMarketing) {
         store.registrarIncidencia('warn', 'No se pudieron generar los metadatos de marketing del clip', 'marketing', detalleDeError(errorMarketing));
       }
+    }
+
+    // Cerebro de marketing: angulo (incluye reality y chisme), puntaje y veredicto del clip. Ollama es opcional y solo se
+    // consulta si OLLAMA_MODEL esta definido; sin el, el analisis es 100 % local. Un fallo aqui no tumba el clip.
+    {
+      const mejorado = await enriquecerClip(
+        { ficha, marketing, transcripcion, duracion: resultado.duracion, instruccion: trabajo.instruccion || '', tituloVideo: video.titulo },
+        { ollama: Boolean(process.env.OLLAMA_MODEL) }
+      );
+      ficha = mejorado.ficha;
+      marketing = mejorado.marketing;
     }
 
     store.completar(clipId, {

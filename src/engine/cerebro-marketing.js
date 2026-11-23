@@ -512,4 +512,53 @@ export async function analizarBloque(entrada = {}, opciones = {}) {
   return mezclarOllama(base, ia, { texto, instruccion: limpiarTextoBase(e.instruccion ?? e.tema ?? '') });
 }
 
-export default { ANGULOS, VEREDICTOS, analizarBloque, analizarBloqueLocal, muletillasIniciales };
+/**
+ * Intensidad de un momento (0-100) segun las senales de reality y chisme/confidencia. Barata y sin estado: la usa el
+ * curador para priorizar picos de tension y confidencias al elegir clips, y el pipeline para marcar la ficha.
+ * @returns {{ tipo: 'tension_reality'|'chisme_confidencia'|null, intensidad: number, tension: number, chisme: number }}
+ */
+export function puntuarIntensidad(texto) {
+  const crudo = String(texto ?? '');
+  const p = plano(crudo.replace(ACOTACION, ' '));
+  const palabras = p.split(/\s+/).filter(Boolean).length;
+  if (!palabras) return { tipo: null, intensidad: 0, tension: 0, chisme: 0 };
+  const tension = contar(new RegExp(SENALES.tension_reality.source, 'g'), p);
+  let chisme = contar(new RegExp(SENALES.chisme_confidencia.source, 'g'), p);
+  if (/[\[(]\s*(susurr|en voz baja|bajito|murmur)/i.test(crudo)) chisme += 2; // habla a media voz
+  const mayor = Math.max(tension, chisme);
+  const densidad = ((tension + chisme) / palabras) * 100;
+  if (mayor === 0 || (mayor < 2 && densidad < 3)) return { tipo: null, intensidad: 0, tension, chisme };
+  return {
+    tipo: chisme > tension ? 'chisme_confidencia' : 'tension_reality',
+    intensidad: Math.round(acotar(mayor * 16 + densidad * 6, 0, 100)),
+    tension,
+    chisme,
+  };
+}
+
+/**
+ * Enriquece un clip ya renderizado con el cerebro: agrega `ficha.cerebro` y `marketing.cerebro` (angulo, puntaje,
+ * veredicto, motor, mejores titulos). Solo si Ollama responde se sustituyen titulo/descripcion/CTA/hashtags de marketing.
+ * Nunca lanza: si algo falla devuelve ficha y marketing tal cual.
+ */
+export async function enriquecerClip({ ficha = null, marketing = null, transcripcion = '', duracion, instruccion = '', tituloVideo = '' } = {}, opciones = {}) {
+  try {
+    const a = await analizarBloque({ texto: transcripcion, duracion, instruccion, tituloVideo }, opciones);
+    if (!a.puntaje) return { ficha, marketing, cerebro: null };
+    const momento = puntuarIntensidad(transcripcion);
+    const cerebro = {
+      angulo: a.angulo, puntaje: a.puntaje, veredicto: a.veredicto, motor: a.motor, gancho: a.gancho,
+      variantesTitulo: a.variantesTitulo.slice(0, 3), momento: momento.tipo ? { tipo: momento.tipo, intensidad: momento.intensidad } : null,
+    };
+    const ficha2 = ficha ? { ...ficha, cerebro } : ficha;
+    let marketing2 = marketing ? { ...marketing, cerebro } : marketing;
+    if (marketing2 && a.motor === 'ollama') {
+      marketing2 = { ...marketing2, titulo: a.tituloPrincipal || marketing2.titulo, descripcion: a.copy || marketing2.descripcion, cta: a.cta || marketing2.cta, hashtags: a.hashtags.length >= 3 ? a.hashtags : marketing2.hashtags };
+    }
+    return { ficha: ficha2, marketing: marketing2, cerebro };
+  } catch {
+    return { ficha, marketing, cerebro: null };
+  }
+}
+
+export default { ANGULOS, VEREDICTOS, analizarBloque, analizarBloqueLocal, muletillasIniciales, puntuarIntensidad, enriquecerClip };

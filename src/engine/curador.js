@@ -1,5 +1,6 @@
 import { config } from '../config/index.js';
 import { generarMarketing } from './marketing.js';
+import { puntuarIntensidad } from './cerebro-marketing.js';
 import { parsear as parsearInstruccion, puntuarTexto, bonus as bonusInstruccion } from '../instruccion.js';
 import {
   INDICE, STOP, FRASES_GANCHO, DEPENDIENTES, DEPENDIENTES_BI, RELLENOS, CONTRASTE, pesoDe, normalizar,
@@ -454,6 +455,7 @@ export function curarVideo({
   maxClips = config.segmentsMax,
   separacion = 3,
   instruccion = null,
+  momentos = true,
 } = {}) {
   const consulta = parsearInstruccion(instruccion);
   const ctx = prepararContexto(palabras);
@@ -494,7 +496,15 @@ export function curarVideo({
       c.coincidencias = r.hits;
     }
   }
-  const rangoDe = (c) => c.ev.puntaje + (c.bonus || 0);
+  // Picos de reality (tension) y chismes/confidencias: suben la prioridad del candidato (hasta +15) sin tocar el puntaje de la
+  // ficha. Solo actua si el texto trae senales claras; la cantidad de clips sigue siendo la pedida.
+  if (momentos) {
+    for (const c of candidatos) {
+      const m = puntuarIntensidad(ctx.palabras.slice(F[c.a].i0, F[c.b].i1 + 1).map((p) => p.texto).join(' '));
+      if (m.tipo) { c.momento = { tipo: m.tipo, intensidad: m.intensidad }; c.bonusMomento = Math.round(m.intensidad * 0.15); }
+    }
+  }
+  const rangoDe = (c) => c.ev.puntaje + (c.bonus || 0) + (c.bonusMomento || 0);
 
   // Seleccion voraz por puntaje (desempate por posicion): sin solapes entre si ni con el historial.
   const orden = [...candidatos].sort((x, y) => rangoDe(y) - rangoDe(x) || y.ev.puntaje - x.ev.puntaje || x.inicio - y.inicio);
@@ -515,6 +525,7 @@ export function curarVideo({
       total: cronologicos.length,
       ranking: ranking.get(c),
     });
+    if (c.momento) ficha.momento = c.momento;
     if (consulta) ficha.instruccion = { texto: consulta.texto, coincide: (c.bonus || 0) > 0, coincidencias: c.coincidencias || [] };
     return { inicio: r2(c.inicio), duracion: r2(c.fin - c.inicio), fin: r2(c.fin), puntaje: c.ev.puntaje, ficha };
   });
