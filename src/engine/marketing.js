@@ -1,4 +1,5 @@
 import { normalizarRedes, REDES, etiquetaRed, ErrorRed } from "../utils/plataformas.js";
+import { analizarBloque, analizarBloqueLocal } from "./cerebro-marketing.js";
 
 function limpiarTexto(valor = "") {
   return String(valor ?? "")
@@ -273,7 +274,50 @@ export function generarMarketingBase({ tituloVideo = "", transcripcion = "", sem
   const hashtags = etiquetas.map((x) => `#${x}`);
   const parte = total > 1 ? ` (parte ${indice} de ${total})` : "";
   const descripcion = [titulo, `Mira hasta el final${parte}.`].join("\n\n");
-  return { titulo, descripcion, cta, hashtags, nicho, version: 2, generadoEn: new Date().toISOString() };
+  const paquete = { titulo, descripcion, cta, hashtags, nicho, version: 2, generadoEn: new Date().toISOString() };
+  const cerebro = resumenCerebro(() => analizarBloqueLocal({ texto: transcripcion, tituloVideo: tema }), transcripcion);
+  if (cerebro) paquete.cerebro = cerebro;
+  return paquete;
+}
+
+// Resumen del cerebro de marketing (angulo, puntaje, veredicto y mejores titulos). Solo agrega datos: nunca cambia
+// titulo/descripcion/cta/hashtags del paquete base, y si el analisis falla el paquete sale igual, sin el campo.
+function resumenCerebro(analizar, transcripcion) {
+  if (!limpiarTexto(transcripcion)) return null;
+  try {
+    const a = analizar();
+    return {
+      angulo: a.angulo, puntaje: a.puntaje, veredicto: a.veredicto, motor: a.motor, gancho: a.gancho,
+      variantesTitulo: a.variantesTitulo.slice(0, 3),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Version asincrona del paquete base: ademas del analisis local consulta Ollama (si esta encendido) para pulir
+ * gancho, titulo, copy y CTA. Si Ollama no responde devuelve exactamente el paquete base con el cerebro heuristico.
+ */
+export async function generarMarketingInteligente(entrada = {}, opciones = {}) {
+  const base = generarMarketingBase(entrada);
+  try {
+    const a = await analizarBloque(
+      { texto: entrada.transcripcion || "", duracion: entrada.duracion, instruccion: entrada.instruccion, tituloVideo: limpiarTexto(entrada.tituloVideo) },
+      opciones
+    );
+    if (a.puntaje === 0) return base;
+    const cerebro = {
+      angulo: a.angulo, puntaje: a.puntaje, veredicto: a.veredicto, motor: a.motor, gancho: a.gancho,
+      variantesTitulo: a.variantesTitulo.slice(0, 3),
+    };
+    if (a.motor === "ollama") {
+      return { ...base, titulo: a.tituloPrincipal || base.titulo, descripcion: a.copy || base.descripcion, cta: a.cta || base.cta, hashtags: a.hashtags.length >= 3 ? a.hashtags : base.hashtags, cerebro };
+    }
+    return { ...base, cerebro };
+  } catch {
+    return base;
+  }
 }
 
 export function generarMarketing(entrada = {}) {
@@ -291,4 +335,5 @@ export default {
   adaptarCopyPorRed,
   generarCopy,
   generarMarketing,
+  generarMarketingInteligente,
 };
