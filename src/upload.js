@@ -25,7 +25,7 @@ export const EXTENSIONES = Object.freeze([".mp4", ".mov", ".mkv", ".webm"]);
 // Un candidato solo vale si se puede crear Y escribir en él (en Railway /data puede llegar sin permisos o sin montar: EACCES/EROFS/ENOENT).
 // Nunca lanza: si falla el principal se usa el siguiente con una advertencia; el arranque del servidor no depende de esto.
 const candidatosUploads = () => {
-  const principal = path.resolve(process.env.UPLOADS_DIR || path.join(process.env.DATA_DIR || "/tmp/cliplab-data", "uploads"));
+  const principal = path.resolve(process.env.UPLOADS_DIR || path.join(process.env.DATA_DIR || path.join(os.tmpdir(), "cliplab-data"), "uploads"));
   const lista = [principal];
   if (process.env.TMP_DIR) lista.push(path.resolve(process.env.TMP_DIR, "uploads"));
   lista.push(path.resolve(os.tmpdir(), "cliplab-uploads"));

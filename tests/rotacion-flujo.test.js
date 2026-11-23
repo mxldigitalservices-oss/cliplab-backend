@@ -1,6 +1,7 @@
 // Integracion de la rotacion ciclica con el flujo: validacion en la ruta, tandas por trabajo, respaldo ante fallos de disco
 // y pipeline real (FFmpeg) con varios clips. Las pruebas del modulo en si estan en tests/rotacion.test.js.
 import test from 'node:test';
+import { SIN_SHELL } from './helpers/plataforma.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -155,7 +156,7 @@ test('si el disco falla, el trabajo no se cae: usa el valor de respaldo', async 
 // ---------------------------------------------------------------------------
 // Pipeline real: los clips de un mismo video salen con estilos y modos rotados.
 // ---------------------------------------------------------------------------
-const skip = !hayFfmpeg && 'ffmpeg no disponible';
+const skip = (!hayFfmpeg && 'ffmpeg no disponible') || SIN_SHELL;
 
 async function subirArchivo() {
   await fs.mkdir(dirUploads(), { recursive: true });

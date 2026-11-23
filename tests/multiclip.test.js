@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { SIN_SHELL } from './helpers/plataforma.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -56,7 +57,7 @@ const { procesarClip, directorioDeTrabajo } = await import('../src/engine/pipeli
 const { createApp } = await import('../src/app.js');
 
 const URL_VIDEO = 'https://www.youtube.com/watch?v=vidfalso';
-const skip = !hayFfmpeg && 'ffmpeg no disponible';
+const skip = (!hayFfmpeg && 'ffmpeg no disponible') || SIN_SHELL;
 
 test.after(() => fs.rm(raiz, { recursive: true, force: true }));
 

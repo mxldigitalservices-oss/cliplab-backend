@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { SIN_SHELL } from './helpers/plataforma.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -50,7 +51,7 @@ test('pideOtraEstrategia reconoce formatos ausentes y 403, pero no otros errores
   assert.equal(pideOtraEstrategia('ERROR: [youtube] x: Private video'), false);
 });
 
-test('camino feliz: una sola llamada, con runtime de JS y SIN forzar clientes', async () => {
+test('camino feliz: una sola llamada, con runtime de JS y SIN forzar clientes', { skip: SIN_SHELL }, async () => {
   const video = await descargarVideo(URL_VIDEO, path.join(raiz, 'd1'));
   assert.equal(video.id, 'vid123');
   assert.equal(video.duracion, 60);
@@ -62,7 +63,7 @@ test('camino feliz: una sola llamada, con runtime de JS y SIN forzar clientes', 
   assert.doesNotMatch(l[0], /--proxy/);
 });
 
-test('si YouTube no entrega formatos con la primera estrategia, la escalera prueba otra y termina bien', async () => {
+test('si YouTube no entrega formatos con la primera estrategia, la escalera prueba otra y termina bien', { skip: SIN_SHELL }, async () => {
   process.env.FAKE_REQUIERE = 'android_vr';
   const video = await descargarVideo(URL_VIDEO, path.join(raiz, 'd2'));
   assert.equal(video.id, 'vid123');
@@ -72,7 +73,7 @@ test('si YouTube no entrega formatos con la primera estrategia, la escalera prue
   assert.ok(l.slice(0, -1).every((x) => !/android_vr/.test(x)));
 });
 
-test('si ninguna estrategia funciona: error claro + estrategias probadas + --list-formats en el detalle', async () => {
+test('si ninguna estrategia funciona: error claro + estrategias probadas + --list-formats en el detalle', { skip: SIN_SHELL }, async () => {
   process.env.FAKE_REQUIERE = 'nunca-aparece';
   await assert.rejects(descargarVideo(URL_VIDEO, path.join(raiz, 'd3')), (error) => {
     assert.match(error.message, /no entrego formatos descargables/);
@@ -86,7 +87,7 @@ test('si ninguna estrategia funciona: error claro + estrategias probadas + --lis
   assert.equal(l.filter((x) => /--list-formats/.test(x)).length, 1);
 });
 
-test('un error que NO es de formatos (video privado) corta de inmediato, sin recorrer la escalera', async () => {
+test('un error que NO es de formatos (video privado) corta de inmediato, sin recorrer la escalera', { skip: SIN_SHELL }, async () => {
   process.env.FAKE_REQUIERE = 'nunca-aparece';
   process.env.FAKE_ERROR = 'ERROR: [youtube] abc: Private video. Sign in if you\'ve been granted access to this video';
   await assert.rejects(descargarVideo(URL_VIDEO, path.join(raiz, 'd4')), /Private video/);

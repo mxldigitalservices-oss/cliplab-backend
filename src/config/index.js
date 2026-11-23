@@ -28,7 +28,8 @@ export const config = Object.freeze({
   ytdlpPath: process.env.YTDLP_PATH || 'yt-dlp',
   ytdlpCookies: process.env.YTDLP_COOKIES || '',
   whisperPath: process.env.WHISPER_PATH || 'whisper-cli',
-  whisperModel: process.env.WHISPER_MODEL || '/opt/whisper/modelo.bin',
+  // Linux/Docker (Railway): /opt/whisper/modelo.bin. Windows: <proyecto>\\models\\whisper\\modelo.bin (o define WHISPER_MODEL).
+  whisperModel: process.env.WHISPER_MODEL || (process.platform === 'win32' ? path.join(raiz, 'models', 'whisper', 'modelo.bin') : '/opt/whisper/modelo.bin'),
   whisperLang: process.env.WHISPER_LANG || 'auto',
 
   fontsDir: process.env.FONTS_DIR || path.join(raiz, 'fonts'),

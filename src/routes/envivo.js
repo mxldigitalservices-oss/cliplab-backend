@@ -30,7 +30,9 @@ export function crearRouterEnVivo({ gestor = gestorEnVivo, almacen = store } = {
 
   router.post('/iniciar', manejar(async (req, res) => {
     const cuerpo = req.body || {};
-    res.status(202).json({ ok: true, sesion: await gestor.iniciar(cuerpo.url, { auto: cuerpo.auto === true }) });
+    const opciones = { auto: cuerpo.auto === true };
+    if (cuerpo.cantidad !== undefined) opciones.cantidad = cuerpo.cantidad;   // tope de cortes automaticos de la sesion
+    res.status(202).json({ ok: true, sesion: await gestor.iniciar(cuerpo.url, opciones) });
   }));
 
   router.post('/detener', manejar(async (req, res) => {
@@ -43,7 +45,11 @@ export function crearRouterEnVivo({ gestor = gestorEnVivo, almacen = store } = {
   }));
 
   router.post('/auto', manejar(async (req, res) => {
-    res.status(200).json({ ok: true, sesion: gestor.configurarAuto(Boolean(req.body && req.body.activo)) });
+    const cuerpo = req.body || {};
+    const sesion = cuerpo.cantidad !== undefined
+      ? gestor.configurarAuto(Boolean(cuerpo.activo), { cantidad: cuerpo.cantidad })
+      : gestor.configurarAuto(Boolean(cuerpo.activo));
+    res.status(200).json({ ok: true, sesion });
   }));
 
   // Entrega una tanda (por defecto 5) de momentos ya listos a "Todos los clips": quedan marcados como enviados.

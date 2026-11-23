@@ -48,7 +48,7 @@ export function parsearPalabras(json) {
 let avisoSinWhisper = false;
 
 /** whisper-cli no existe (no se pudo lanzar) o no encuentra su modelo: instalacion incompleta, no un problema del audio. */
-function whisperNoDisponible(error) {
+export function whisperNoDisponible(error) {
   if (!(error instanceof ComandoError)) return false;
   if (!error.codigo && !error.stderr && /No se pudo iniciar|ENOENT/i.test(error.message)) return true;
   return /failed to (open|load|initialize).*(model|whisper context)|failed to initialize whisper context/i.test(String(error.stderr || ''));

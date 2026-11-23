@@ -30,11 +30,24 @@ export function presetLigero(valor) {
 
 let avisoLogoEmitido = false;
 
-function rutaParaFiltro(ruta) {
-  if (!RUTA_SEGURA.test(ruta)) {
-    throw new Error('Ruta no permitida en el filtro de subtitulos: ' + ruta);
+// Caracteres que puede llevar una ruta (Windows incluido: letras con tilde, espacios, parentesis) SIN poder alterar el filtro.
+const RUTA_SEGURA_AMPLIA = /^[\p{L}\p{N}_ \/.\-()~]*$/u;
+
+/**
+ * Ruta lista para `ass=filename=...` / `fontsdir=...` dentro del filtergraph.
+ *  - Rutas simples (Linux/Railway): se devuelven tal cual (comportamiento de siempre).
+ *  - Rutas de Windows (`C:\Users\Juan Perez\...`) o con espacios: barras normales, `C:` escapado como `C\:` y todo entre comillas simples.
+ *  - Cualquier otro caracter (comillas, comas, `;`, corchetes, `=`...) se rechaza: la ruta nunca puede inyectar filtros.
+ */
+export function rutaParaFiltro(ruta) {
+  const texto = String(ruta);
+  if (RUTA_SEGURA.test(texto)) return texto;
+  const normal = texto.replace(/\\/g, '/');
+  const sinUnidad = normal.replace(/^[A-Za-z]:/, '');
+  if (!RUTA_SEGURA_AMPLIA.test(sinUnidad)) {
+    throw new Error('Ruta no permitida en el filtro de subtitulos: ' + texto);
   }
-  return ruta;
+  return "'" + normal.replace(/^([A-Za-z]):/, '$1\\:') + "'";
 }
 
 async function existe(ruta) {

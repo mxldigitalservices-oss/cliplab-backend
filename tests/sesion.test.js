@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { SIN_SHELL } from './helpers/plataforma.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -68,7 +69,7 @@ test('el almacen cifra en disco y recupera el perfil', async () => {
   assert.ok(perfil.cookies.includes('VALOR_SECRETO_1'));
 });
 
-test('importar guarda la sesion y persiste las cookies que yt-dlp rota', async () => {
+test('importar guarda la sesion y persiste las cookies que yt-dlp rota', { skip: SIN_SHELL }, async () => {
   process.env.FAKE_MODE = 'ok';
   await gestor.borrar();
   await gestor.importar(NETSCAPE);
@@ -85,13 +86,13 @@ test('importar guarda la sesion y persiste las cookies que yt-dlp rota', async (
   assert.equal(sobrantes.length, 0, 'no deben quedar cookies descifradas en disco');
 });
 
-test('un bloqueo anti-bot deja la sesion como bloqueada', async () => {
+test('un bloqueo anti-bot deja la sesion como bloqueada', { skip: SIN_SHELL }, async () => {
   process.env.FAKE_MODE = 'bot';
   const estado = await gestor.verificar({ motivo: 'prueba' });
   assert.equal(estado.estado, 'bloqueada');
 });
 
-test('descargarVideo renueva la sesion y reintenta una vez ante anti-bot', async () => {
+test('descargarVideo renueva la sesion y reintenta una vez ante anti-bot', { skip: SIN_SHELL }, async () => {
   process.env.FAKE_MODE = 'botuna';
   await fs.rm(process.env.FAKE_COUNT, { force: true });
   const video = await descargarVideo('https://www.youtube.com/watch?v=dQw4w9WgXcQ', path.join(raiz, 'descarga'));
@@ -99,7 +100,7 @@ test('descargarVideo renueva la sesion y reintenta una vez ante anti-bot', async
   await fs.access(process.env.FAKE_COUNT);
 });
 
-test('sin sesion y con bloqueo persistente no reintenta y pide importar cookies', async () => {
+test('sin sesion y con bloqueo persistente no reintenta y pide importar cookies', { skip: SIN_SHELL }, async () => {
   process.env.FAKE_MODE = 'bot';
   await gestor.borrar();
   await assert.rejects(

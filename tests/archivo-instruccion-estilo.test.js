@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { SIN_SHELL } from './helpers/plataforma.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -46,7 +47,7 @@ const ESPECIAL_DESDE = 82;
   await fs.writeFile(process.env.FAKE_ASR, JSON.stringify({ transcription }));
 }
 
-const skip = !hayFfmpeg && 'ffmpeg no disponible';
+const skip = (!hayFfmpeg && 'ffmpeg no disponible') || SIN_SHELL;
 const fuente = path.join(raiz, 'fuente.mp4');
 if (hayFfmpeg) {
   const ff = (args) => assert.equal(spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]).status, 0);

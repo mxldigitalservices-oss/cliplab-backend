@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { SIN_SHELL } from './helpers/plataforma.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -24,7 +25,7 @@ if (hayFfmpeg) {
   assert.equal(r.status, 0);
 }
 test.after(() => fs.rm(raiz, { recursive: true, force: true }));
-const skip = !hayFfmpeg && 'ffmpeg no disponible';
+const skip = (!hayFfmpeg && 'ffmpeg no disponible') || SIN_SHELL;
 
 test('whisper presente pero sin modelo: se trata como no disponible y devuelve []', { skip }, async () => {
   process.env.FAKE_WHISPER = 'sin-modelo';
