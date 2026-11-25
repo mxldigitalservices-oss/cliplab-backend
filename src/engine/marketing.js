@@ -337,3 +337,100 @@ export default {
   generarMarketing,
   generarMarketingInteligente,
 };
+
+const PLANTILLAS_TITULO_MXL = [
+  "{tema}: lo que casi nadie comenta",
+  "Por qué {tema} cambia todo esto",
+  "{tema} explicado sin rodeos",
+  "Esto pasa cuando {tema} se toma en serio",
+];
+
+if (typeof globalThis.PLANTILLAS_TITULO === "undefined") {
+  globalThis.PLANTILLAS_TITULO = PLANTILLAS_TITULO_MXL;
+}
+
+function limpiarTextoMxl(valor = "") {
+  return String(valor || "").replace(/\s+/g, " ").trim();
+}
+
+export function construirHashtagsReels(tags = [], tema = "contenido", plataforma = "facebook") {
+  const baseLimpia = (Array.isArray(tags) ? tags : [])
+    .map((t) =>
+      String(t || "")
+        .replace(/[#\s]+/g, "")
+        .replace(/[^\p{L}\p{N}_]/gu, "")
+    )
+    .filter((t) => t.length >= 2);
+
+  const temaSlug = limpiarTextoMxl(tema)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter((p) => p.length >= 3)
+    .slice(0, 2);
+
+  const plataformaTag =
+    plataforma === "facebook"
+      ? ["FacebookReels", "Reels"]
+      : ["Shorts", "Clips"];
+
+  const combinados = [...baseLimpia, ...temaSlug, ...plataformaTag];
+  const unicos = [];
+
+  for (const item of combinados) {
+    const canon = item.toLowerCase();
+    if (!unicos.some((existente) => existente.toLowerCase() === canon)) {
+      unicos.push(item.charAt(0).toUpperCase() + item.slice(1));
+    }
+    if (unicos.length >= 5) break;
+  }
+
+  while (unicos.length < 3) {
+    const relleno = ["Viral", "Tendencia", "ParaTi"][unicos.length];
+    if (!unicos.some((x) => x.toLowerCase() === relleno.toLowerCase())) {
+      unicos.push(relleno);
+    }
+  }
+
+  return unicos.slice(0, 5).map((t) => `#${t}`);
+}
+
+export function construirCtaComentarioReels(tema = "este tema", contexto = {}) {
+  const parteTexto =
+    contexto.parte && contexto.totalPartes
+      ? ` (Parte ${contexto.parte} de ${contexto.totalPartes})`
+      : "";
+  const asunto = limpiarTextoMxl(tema) || "este tema";
+  return `¿Estás de acuerdo o ves algo distinto en ${asunto}${parteTexto}? Cuéntame tu postura en los comentarios y dale me gusta si te aportó.`;
+}
+
+export function enriquecerMarketingReels(datos = {}) {
+  const tema = limpiarTextoMxl(datos.tema || datos.titulo || "este clip") || "este clip";
+  const gancho = limpiarTextoMxl(datos.gancho || datos.resumen || datos.idea || tema);
+  const plataforma = limpiarTextoMxl(datos.plataforma || "facebook").toLowerCase();
+  const indice = Math.abs(Number(datos.indice ?? 0)) % PLANTILLAS_TITULO_MXL.length;
+
+  const tituloBase =
+    limpiarTextoMxl(datos.titulo) ||
+    PLANTILLAS_TITULO_MXL[indice].replace("{tema}", tema);
+
+  const partePrefijo =
+    datos.parte && datos.totalPartes
+      ? `[Parte ${datos.parte}/${datos.totalPartes}] `
+      : "";
+
+  const titulo = `${partePrefijo}${tituloBase}`.slice(0, 110);
+  const cta = construirCtaComentarioReels(tema, datos);
+  const hashtags = construirHashtagsReels(datos.hashtags, tema, plataforma);
+
+  const descripcion = [gancho, "", cta, "", hashtags.join(" ")].join("\n").trim();
+
+  return {
+    titulo,
+    gancho,
+    cta,
+    hashtags,
+    descripcion,
+  };
+}
