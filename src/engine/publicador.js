@@ -1,3 +1,4 @@
+import { tieneCredencialesMeta, publicarReelInstagramMeta } from "./publicadorMeta.js";
 // ---------------------------------------------------------------------------
 // Publicador: sube un clip ya renderizado a TikTok / Instagram / Facebook usando las cookies de sesion que guarda el
 // modulo de conexiones (src/sesion/cookiesRedes.js). Devuelve un resultado ESTRUCTURADO por canal.
@@ -364,10 +365,47 @@ async function cookiesDe(red, { leerCookies, obligatorias }) {
  * @param {{rutaVideo:string, texto:string}} clip
  * @param {object} ctx  { driver, humano, leerCookies, obligatorias, selectores, timeouts, reloj }
  */
+
+async function ejecutarMetaInstagram(clip, ctx = {}) {
+  const env = ctx.env || process.env;
+  const reloj = ctx.reloj || (() => new Date().toISOString());
+  try {
+    const r = await publicarReelInstagramMeta(clip, {
+      env,
+      fetchFn: ctx.fetchFn,
+      sleepFn: ctx.sleepFn,
+    });
+    return {
+      ok: true,
+      error: null,
+      codigo: "OK",
+      detalle: "Publicado en instagram via Meta Graph API (mediaId=" + r.mediaId + ")",
+      timestamp: reloj(),
+      transitorio: false,
+      simulado: false,
+      meta: r,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: String(err?.message || err),
+      codigo: "META_ERROR",
+      detalle: String(err?.message || err),
+      timestamp: reloj(),
+      transitorio: false,
+      simulado: false,
+      meta: null,
+    };
+  }
+}
+
 export async function publicarEnRed(red, clip, ctx) {
   let sesion = null;
   try {
     if (!REDES_SOPORTADAS.includes(red)) throw new ErrorPublicador('RED_NO_SOPORTADA', 'Red no soportada: ' + red, false);
+    if (red === "instagram" && ctx.driver?.tipo !== "seco" && tieneCredencialesMeta(ctx.env || process.env)) {
+      return await ejecutarMetaInstagram(clip, ctx);
+    }
     const cookies = await cookiesDe(red, ctx);
     const pasos = construirPasos(red, ctx.selectores);
     sesion = await ctx.driver.abrir({ red, cookies });
@@ -411,6 +449,20 @@ export async function publicarClip(clip, o = {}) {
   };
 
   if (plataformas.length === 0) return marcarTodas(new ErrorPublicador('SIN_PLATAFORMAS', 'No se indicaron plataformas', false));
+  const envMeta = o.env || process.env;
+  const descPrevia = [clip.descripcion, clip.description, clip.resumen, clip.summary, clip.caption, clip.titulo, clip.title]
+    .find((v) => String(v ?? "").trim() !== "") ?? "";
+  const textoPrevia = armarTexto(descPrevia, clip.etiquetas);
+
+  if (modo !== "seco" && tieneCredencialesMeta(envMeta) && plataformas.includes("instagram")) {
+    resultados["instagram"] = await ejecutarMetaInstagram(
+      { ...clip, texto: textoPrevia },
+      { env: envMeta, fetchFn: o.fetchFn, sleepFn: o.sleepFn, reloj }
+    );
+  }
+
+  const plataformasNavegador = plataformas.filter((red) => !(red in resultados));
+  if (plataformasNavegador.length === 0) return cerrar();
   if (!clip.rutaVideo) return marcarTodas(new ErrorPublicador('SIN_VIDEO', 'Falta rutaVideo', false));
   try {
     await fs.access(clip.rutaVideo);
@@ -433,7 +485,7 @@ export async function publicarClip(clip, o = {}) {
   // La sesion de cada red se comprueba ANTES de abrir el navegador: sin cookies vigentes no hay nada que publicar y
   // Chromium consume cientos de MB. Cada red sin sesion queda con su mensaje claro; si ninguna tiene, no se lanza Chromium.
   const sinSesion = new Set();
-  for (const red of plataformas) {
+  for (const red of plataformasNavegador) {
     if (!REDES_SOPORTADAS.includes(red)) {
       resultados[red] = fallo(new ErrorPublicador('RED_NO_SOPORTADA', 'Red no soportada: ' + red, false), reloj);
       sinSesion.add(red);
@@ -446,7 +498,7 @@ export async function publicarClip(clip, o = {}) {
       sinSesion.add(red);
     }
   }
-  const listas = plataformas.filter((red) => !sinSesion.has(red));
+  const listas = plataformasNavegador.filter((red) => !sinSesion.has(red));
   if (listas.length === 0) return cerrar();
 
   let driver = o.driver;
