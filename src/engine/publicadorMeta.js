@@ -109,3 +109,49 @@ export async function publicarReelInstagramMeta(clip, opts = {}) {
     estadoFinal: estado,
   };
 }
+
+export function tieneCredencialesFacebookMeta(env = process.env) {
+  return Boolean(String(env.FB_PAGE_ACCESS_TOKEN || "").trim() && String(env.FB_PAGE_ID || "").trim());
+}
+
+export async function publicarVideoFacebookMeta(clip, opts = {}) {
+  const env = opts.env || process.env;
+  const fetchFn = opts.fetchFn || globalThis.fetch;
+  if (typeof fetchFn !== "function") {
+    throw new Error("FETCH_NO_DISPONIBLE: no hay funcion fetch disponible");
+  }
+  const accessToken = String(env.FB_PAGE_ACCESS_TOKEN || "").trim();
+  const pageId = String(env.FB_PAGE_ID || "").trim();
+  if (!accessToken || !pageId) {
+    throw new Error("FB_CREDENCIALES_FALTANTES: faltan FB_PAGE_ACCESS_TOKEN o FB_PAGE_ID");
+  }
+  const videoUrl = resolverUrlPublicaClip(clip, env);
+  if (!videoUrl) {
+    throw new Error("FB_SIN_URL_PUBLICA: se requiere urlPublica/url HTTPS o RAILWAY_PUBLIC_DOMAIN + archivo/rutaVideo");
+  }
+  const description = String(opts.texto ?? clip.texto ?? clip.caption ?? clip.descripcion ?? clip.titulo ?? "").trim();
+  const title = String(clip.titulo || clip.title || "").trim();
+  const params = new URLSearchParams({
+    file_url: videoUrl,
+    access_token: accessToken,
+  });
+  if (description) params.set("description", description);
+  if (title) params.set("title", title);
+
+  const res = await fetchFn(`${GRAPH_BASE}/${encodeURIComponent(pageId)}/videos`, {
+    method: "POST",
+    body: params,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.id) {
+    throw new Error(`FB_PUBLICAR_ERROR (${res.status}): ${JSON.stringify(data)}`);
+  }
+  return {
+    ok: true,
+    red: "facebook",
+    canal: "graph_api",
+    videoId: data.id,
+    pageId,
+    videoUrl,
+  };
+}

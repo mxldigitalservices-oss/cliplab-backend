@@ -155,4 +155,13 @@ export async function sincronizarCookiesRedes() {
       modo: 'graph_api'
     });
   }
+  const fbTok = (process.env.FB_PAGE_ACCESS_TOKEN || "").trim();
+  const fbId = (process.env.FB_PAGE_ID || "").trim();
+  if (fbTok && fbId) {
+    marcarConexion('facebook', 'activa', {
+      cuenta: 'Graph API · ' + fbId,
+      expiraEn: null,
+      modo: 'graph_api'
+    });
+  }
 }

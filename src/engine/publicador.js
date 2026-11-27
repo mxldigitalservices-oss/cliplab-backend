@@ -1,4 +1,4 @@
-import { tieneCredencialesMeta, publicarReelInstagramMeta } from "./publicadorMeta.js";
+import { tieneCredencialesMeta, publicarReelInstagramMeta, tieneCredencialesFacebookMeta, publicarVideoFacebookMeta } from "./publicadorMeta.js";
 // ---------------------------------------------------------------------------
 // Publicador: sube un clip ya renderizado a TikTok / Instagram / Facebook usando las cookies de sesion que guarda el
 // modulo de conexiones (src/sesion/cookiesRedes.js). Devuelve un resultado ESTRUCTURADO por canal.
@@ -399,10 +399,33 @@ async function ejecutarMetaInstagram(clip, ctx = {}) {
   }
 }
 
+
+async function ejecutarMetaFacebook(clip, ctx = {}) {
+  const env = ctx.env || process.env;
+  const r = await publicarVideoFacebookMeta(clip, {
+    env,
+    fetchFn: ctx.fetchFn,
+    texto: ctx.texto,
+  });
+  return {
+    ok: true,
+    error: null,
+    codigo: "OK",
+    detalle: `Publicado en facebook via Graph API (videoId=${r.videoId})`,
+    timestamp: ctx.reloj ? ctx.reloj() : new Date().toISOString(),
+    transitorio: false,
+    simulado: false,
+    externoId: r.videoId,
+  };
+}
+
 export async function publicarEnRed(red, clip, ctx) {
   let sesion = null;
   try {
     if (!REDES_SOPORTADAS.includes(red)) throw new ErrorPublicador('RED_NO_SOPORTADA', 'Red no soportada: ' + red, false);
+    if (red === "facebook" && ctx.driver?.tipo !== "seco" && tieneCredencialesFacebookMeta(ctx.env || process.env)) {
+      return await ejecutarMetaFacebook(clip, ctx);
+    }
     if (red === "instagram" && ctx.driver?.tipo !== "seco" && tieneCredencialesMeta(ctx.env || process.env)) {
       return await ejecutarMetaInstagram(clip, ctx);
     }
@@ -458,6 +481,12 @@ export async function publicarClip(clip, o = {}) {
     resultados["instagram"] = await ejecutarMetaInstagram(
       { ...clip, texto: textoPrevia },
       { env: envMeta, fetchFn: o.fetchFn, sleepFn: o.sleepFn, reloj }
+    );
+  }
+  if (modo !== "seco" && tieneCredencialesFacebookMeta(envMeta) && plataformas.includes("facebook")) {
+    resultados["facebook"] = await ejecutarMetaFacebook(
+      { ...clip, texto: textoPrevia },
+      { env: envMeta, fetchFn: o.fetchFn, reloj }
     );
   }
 
