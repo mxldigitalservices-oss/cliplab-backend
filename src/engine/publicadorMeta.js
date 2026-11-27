@@ -114,6 +114,22 @@ export function tieneCredencialesFacebookMeta(env = process.env) {
   return Boolean(String(env.FB_PAGE_ACCESS_TOKEN || "").trim() && String(env.FB_PAGE_ID || "").trim());
 }
 
+async function verificarUrlVideoDisponible(videoUrl, fetchFn) {
+  if (!videoUrl || typeof fetchFn !== "function") return false;
+  try {
+    let res = await fetchFn(videoUrl, { method: "HEAD" });
+    if (res && (res.status === 405 || res.status === 501)) {
+      res = await fetchFn(videoUrl, { method: "GET", headers: { Range: "bytes=0-1024" } });
+    }
+    if (!res || !res.ok) return false;
+    const len = Number(res.headers?.get?.("content-length") || 0);
+    if (res.headers?.get?.("content-length") !== null && len === 0) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function publicarVideoFacebookMeta(clip, opts = {}) {
   const env = opts.env || process.env;
   const fetchFn = opts.fetchFn || globalThis.fetch;
@@ -125,9 +141,16 @@ export async function publicarVideoFacebookMeta(clip, opts = {}) {
   if (!accessToken || !pageId) {
     throw new Error("FB_CREDENCIALES_FALTANTES: faltan FB_PAGE_ACCESS_TOKEN o FB_PAGE_ID");
   }
+  if (clip && (clip.activo === false || clip.estado === "inactivo" || clip.retirado === true)) {
+    throw new Error("FB_CLIP_NO_ACTIVO: el clip seleccionado no esta activo");
+  }
   const videoUrl = resolverUrlPublicaClip(clip, env);
   if (!videoUrl) {
     throw new Error("FB_SIN_URL_PUBLICA: se requiere urlPublica/url HTTPS o RAILWAY_PUBLIC_DOMAIN + archivo/rutaVideo");
+  }
+  const disponible = await verificarUrlVideoDisponible(videoUrl, fetchFn);
+  if (!disponible) {
+    throw new Error(`FB_VIDEO_INACTIVO_O_NO_DISPONIBLE: no hay archivo activo accesible en ${videoUrl}`);
   }
   const description = String(opts.texto ?? clip.texto ?? clip.caption ?? clip.descripcion ?? clip.titulo ?? "").trim();
   const title = String(clip.titulo || clip.title || "").trim();
