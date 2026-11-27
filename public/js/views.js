@@ -167,11 +167,13 @@ export function renderConexiones(conexiones) {
       (c.expiraEn ? '<span>Vence: ' + esc(formatoFecha(c.expiraEn)) + '</span>' : '') +
       '<span>Ultima verificacion: ' + esc(formatoFecha(c.ultimaVerificacion)) + '</span></div>' +
       (c.estado === 'ilegible' && c.detalle ? '<div class="meta"><span>' + esc(c.detalle) + '</span></div>' : '') +
-      '<div class="acciones">' +
-        '<button class="btn' + (c.estado === 'activa' ? '' : ' btn-primario') + '" type="button" data-red-accion="pegar" data-red="' + plat + '">' +
-          (conSesion ? 'Reemplazar cookies' : 'Pegar cookies') + '</button>' +
-        (conSesion ? '<button class="btn" type="button" data-red-accion="quitar" data-red="' + plat + '">Quitar</button>' : '') +
-      '</div>' +
+        (c.modo === 'graph_api' ? '' : (
+          '<div class="acciones">' +
+            '<button class="btn' + (c.estado === 'activa' ? '' : ' btn-primario') + '" type="button" data-red-accion="pegar" data-red="' + plat + '">' +
+              (conSesion ? 'Reemplazar cookies' : 'Pegar cookies') + '</button>' +
+            (conSesion ? '<button class="btn" type="button" data-red-accion="quitar" data-red="' + plat + '">Quitar</button>' : '') +
+            '</div>'
+        )) +
     '</article>';
   }).join('');
 }

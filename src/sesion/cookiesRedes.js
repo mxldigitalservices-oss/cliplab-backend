@@ -144,6 +144,15 @@ export async function sincronizarCookiesRedes() {
   for (const red of await listarCookiesRedes()) {
     if (red.error) marcarConexion(red.red, 'ilegible', { detalle: red.error });
     else if (red.guardada) marcarConexion(red.red, estadoDe(red), { expiraEn: red.vence });
-    else marcarConexion(red.red, 'sin_sesion', { cuenta: null, expiraEn: null });
+    else marcarConexion(red.red, 'sin_sesion', { cuenta: null, expiraEn: null, modo: null });
+  }
+  const igTok = (process.env.IG_ACCESS_TOKEN || "").trim();
+  const igId = (process.env.IG_USER_ID || "").trim();
+  if (igTok && igId) {
+    marcarConexion('instagram', 'activa', {
+      cuenta: 'Graph API · ' + igId,
+      expiraEn: null,
+      modo: 'graph_api'
+    });
   }
 }
