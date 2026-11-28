@@ -258,11 +258,11 @@ function fallarTrabajo(jobId, mensaje, detalle) {
   return afectados;
 }
 
-function retirarVideo(rutaUrl) {
+function retirarVideo(rutaUrl, motivo = 'Archivo eliminado por limite de almacenamiento') {
   for (const clip of datos.clips) {
     if (clip.url === rutaUrl) {
       clip.url = null;
-      clip.etapa = 'Archivo eliminado por limite de almacenamiento';
+      clip.etapa = motivo;
       clip.actualizadoEn = ahora();
     }
   }

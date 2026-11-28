@@ -10,13 +10,14 @@ import { escribirAss } from './subtitles.js';
 import { renderizarClip } from './render.js';
 import { planificarSegmentos, leerHistorial, registrarPasada } from './segmentos.js';
 import { generarMarketing } from './marketing.js';
-import { enriquecerClip } from './cerebro-marketing.js';
 import { ajustarAFrases, cortesEnCaliente, planDePlanos } from './editorial.js';
+import { analizarBloqueLocal, enriquecerClip } from './cerebro-marketing.js';
 import { AJUSTES, curarVideo, fichaDeVentana, armarRevisionTecnica } from './curador.js';
 import { detalleDeError } from '../utils/run.js';
 import { borrarUpload } from '../upload.js';
 import { construirAssEstilo } from '../estilos-subtitulos.js';
 import { perfilesDeTrabajo } from './rotacion-flujo.js';
+import { procesarSerie } from '../services/storySeriesEngine.js';
 
 let avisoLogo = false;
 
@@ -205,6 +206,17 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
     registrarTiempo(clipId, 'transcripcion', marca);
 
     let palabras = palabrasVentana;
+    // Puerta de calidad (En Vivo por bloques): si el cerebro dice "descartar" se omite el clip ANTES de subtitular y
+    // renderizar, que es lo que mas CPU gasta.
+    if (trabajo.descartarMalos) {
+      const previo = analizarBloqueLocal({ texto: palabrasVentana.map((p) => p.texto).join(' '), duracion, tituloVideo: video.titulo });
+      if (previo.veredicto === 'descartar') {
+        const e = new Error('Descartado por calidad (puntaje ' + previo.puntaje + '/100)');
+        e.descartado = true;
+        e.puntaje = previo.puntaje;
+        throw e;
+      }
+    }
     let cortes = null;
     let inicioReal = inicio;
     if (editorial && palabrasVentana.length >= 3) {
@@ -367,6 +379,15 @@ export async function procesarClip(trabajo, signal) {
     store.actualizar(id, { titulo: video.titulo });
     registrarTiempo(id, 'descarga', marca);
 
+    // Serie de episodios de 60 s (services/storySeriesEngine.js): no pasa por el curador de clips sueltos.
+    if (trabajo.serie) {
+      await procesarSerie({
+        trabajo, video, dirTrabajo, signal, avanceDe: crearAvance, avanzarJob,
+        transcribir: () => transcribirFuente(video, dirTrabajo, { signal, onProgreso: (fraccion) => avanzarJob('Transcribiendo video completo', 30 + fraccion * 25) }),
+      });
+      return;
+    }
+
     // 2. Plan de cortes
     let segmentos;
     let pasada = 0;
@@ -520,6 +541,12 @@ export async function procesarClip(trabajo, signal) {
         exitosos.push(segmentos[i]);
       } catch (error) {
         if (signal && signal.aborted) throw error;
+        if (error.descartado) {
+          // No es un fallo: el clip no tenia calidad. Se archiva (no sale en la bandeja) y se sigue con los demas.
+          logger.info('Clip descartado por calidad', { id: clipId, puntaje: error.puntaje });
+          store.actualizar(clipId, { estado: 'descartado', etapa: error.message, progreso: 100, archivadoEn: Date.now() });
+          continue;
+        }
         // Un clip fallido no detiene a los demas: se registra y se continua.
         ultimoError = error;
         logger.error('Clip fallido', { id: clipId, indice: i + 1, mensaje: error.message });

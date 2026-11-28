@@ -182,6 +182,12 @@ function opcionesBase() {
     asrHilos: Math.max(1, Math.floor(num('ENVIVO_ASR_HILOS', 2))),
     asrTimeoutMs: Math.max(10000, num('ENVIVO_ASR_TIMEOUT_MS', 120000)),
     duracionAuto: Math.max(10, num('ENVIVO_DURACION_AUTO', 55)),
+    // Modo bloques: cada ENVIVO_BLOQUE_SEG (6 min) de directo se congela como un mp4 y entra a la cola como un video
+    // normal en modo automatico (el curador elige hasta ENVIVO_BLOQUE_CLIPS cortes). Mientras se procesa un bloque,
+    // el grabador sigue guardando el siguiente.
+    bloquesPorDefecto: /^(1|true|si|on)$/i.test(String(process.env.ENVIVO_BLOQUES || '')),
+    bloqueSeg: Math.max(60, num('ENVIVO_BLOQUE_SEG', 360)),
+    bloqueClips: Math.max(1, Math.min(5, Math.floor(num('ENVIVO_BLOQUE_CLIPS', 3)))),
   };
 }
 
@@ -244,6 +250,7 @@ export function crearGestorEnVivo(deps = {}) {
       desde: s.desde,
       segundosGrabados: Math.round((d.ahora() - s.inicioMs) / 1000),
       auto: s.auto,
+      bloques: s.bloques ? { activo: true, enviados: s.bloquesEnviados, segundos: opts().bloqueSeg, ultimo: s.ultimoBloque } : { activo: false },
       ultimoPico: s.ultimoPico,
       deteccion: {
         asr: s.asr,                                   // activo | no_disponible | desactivado
@@ -360,7 +367,7 @@ export function crearGestorEnVivo(deps = {}) {
     }
   }
 
-  async function iniciar(url, { auto = false, cantidad } = {}) {
+  async function iniciar(url, { auto = false, cantidad, bloques } = {}) {
     if (sesion && ACTIVOS.includes(sesion.estado)) {
       throw new ErrorEnVivo('Ya hay una transmisión en captura. Deténla antes de iniciar otra.', 409);
     }
@@ -378,6 +385,8 @@ export function crearGestorEnVivo(deps = {}) {
       videoId: null, titulo: null, auto: Boolean(auto), ultimoPico: null, momentos: 0, error: null,
       cantidadAuto: cantidadValida(cantidad, opts().cantidad), autoMarcados: 0,
       asr: opts().asr ? 'activo' : 'desactivado', fallosAsr: 0, ultimoAnalisis: null,
+      bloques: bloques === undefined ? opts().bloquesPorDefecto : Boolean(bloques),
+      bloquesEnviados: 0, ultimoBloqueSeg: -1, ultimoBloque: null,
       historial: [], analizados: new Set(), reinicios: 0, ultimoMomentoMs: 0,
       marcando: false, bloqueado: false, ocupadoTick: false,
       cancelar: new AbortController(), controlador: null, grabador: null, vigilante: null, limite: null, expira: null,
@@ -398,7 +407,8 @@ export function crearGestorEnVivo(deps = {}) {
 
   async function podar(s) {
     const o = opts();
-    const maxSegs = Math.max(3, Math.ceil(o.ventanaSeg / o.segmentoSeg));
+    const ventana = s.bloques ? Math.max(o.ventanaSeg, o.bloqueSeg * 3) : o.ventanaSeg;   // en modo bloques el anillo guarda ~3 bloques
+    const maxSegs = Math.max(3, Math.ceil(ventana / o.segmentoSeg));
     const { completos } = await listarSegmentos(s);
     for (const nombre of completos.slice(0, Math.max(0, completos.length - maxSegs))) {
       await fs.rm(path.join(s.dir, nombre), { force: true });
@@ -488,7 +498,8 @@ export function crearGestorEnVivo(deps = {}) {
         picoNuevo = true;
         s.ultimoPico = { db, en: new Date(d.ahora()).toISOString() };
       }
-      if (hayNuevos && s.auto) await decidirAuto(s, o, completos, { picoNuevo, vozBajaNueva });
+      if (s.bloques) await cerrarBloque(s, o, completos);
+      else if (hayNuevos && s.auto) await decidirAuto(s, o, completos, { picoNuevo, vozBajaNueva });
       if (!s.bloqueado) await podar(s);
       for (const n of [...s.analizados]) if (!completos.includes(n)) s.analizados.delete(n);
     } finally {
@@ -522,6 +533,72 @@ export function crearGestorEnVivo(deps = {}) {
     }
     await marcar({ origen: 'auto', segundosAtras: o.duracionAuto, deteccion })
       .catch((e) => d.logger.warn('En Vivo: momento automatico omitido', { mensaje: e.message }));
+  }
+
+  const numeroSegmento = (nombre) => Number(/\d+/.exec(nombre)[0]);
+
+  // Cierra un bloque cuando hay `bloqueSeg` segundos NUEVOS de directo y la cola tiene sitio. Nunca espera a que termine
+  // el procesamiento anterior: el grabador (ffmpeg -c copy) es otro proceso y sigue escribiendo mientras se renderiza.
+  async function cerrarBloque(s, o, completos) {
+    if (s.marcando) return;
+    const necesarios = Math.max(1, Math.ceil(o.bloqueSeg / o.segmentoSeg));
+    const nuevos = completos.filter((n) => numeroSegmento(n) > s.ultimoBloqueSeg);
+    if (nuevos.length < necesarios) return;
+    if (d.cargaActual() >= Math.min(o.maxPendientes, d.config.maxQueue || Infinity)) return;   // se espera; el anillo lo conserva
+    const elegidos = nuevos.slice(0, necesarios);
+    s.marcando = true;
+    s.bloqueado = true;   // la poda no toca segmentos mientras se unen
+    let ruta = null;
+    let lista = null;
+    let encolado = false;
+    try {
+      const bloqueId = 'bloque_' + d.ahora().toString(36) + crypto.randomBytes(3).toString('hex');
+      const dirSubidas = d.dirUploads();
+      await fs.mkdir(dirSubidas, { recursive: true });
+      ruta = path.join(dirSubidas, 'envivo_' + bloqueId + '.mp4');
+      lista = path.join(s.dir, bloqueId + '.txt');
+      await fs.writeFile(lista, listaConcat(elegidos.map((n) => path.join(s.dir, n))));
+      await d.run(d.config.ffmpegPath, [
+        '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'concat', '-safe', '0', '-i', lista,
+        '-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', '+faststart', ruta,
+      ], { timeoutMs: 180000 });
+
+      const nombre = 'En vivo ' + (s.titulo || s.videoId || '') + ' bloque ' + (s.bloquesEnviados + 1);
+      const archivo = await d.validarVideo(ruta, nombre);
+      const real = Number(archivo.duracion) || elegidos.length * o.segmentoSeg;
+      const estilo = pedirEstilo(undefined);
+      const clip = d.store.encolar('En vivo · ' + (s.titulo || s.videoId || 'transmisión') + ' · bloque ' + (s.bloquesEnviados + 1), {
+        origen: 'archivo',
+        instruccion: null,
+        estiloSubtitulos: estilo === AUTO ? null : estilo,
+      });
+      d.store.actualizar(clip.id, {
+        envivo: { sesionId: s.id, momentoId: bloqueId, origen: 'bloque', creadoEn: new Date(d.ahora()).toISOString(), deteccion: { metodo: 'bloque', segundos: Math.round(real) } },
+      });
+      try {
+        d.agregarTrabajo({
+          id: clip.id, url: null, archivo, auto: true, cantidad: o.bloqueClips, descartarMalos: true,
+          inicio: 0, duracion: Math.max(1, Math.min(Math.floor(real), d.config.maxClipSeconds)),
+          modo: pedirModo(undefined), instruccion: sanear(undefined), estiloSubtitulos: estilo, ajustes: null,
+        });
+      } catch (error) {
+        d.store.fallar(clip.id, error.message, '');
+        throw error;
+      }
+      encolado = true;
+      s.bloquesEnviados += 1;
+      s.momentos += 1;
+      s.ultimoBloque = { en: new Date(d.ahora()).toISOString(), segundos: Math.round(real), clipId: clip.id };
+    } catch (error) {
+      if (!encolado && ruta) await d.borrarUpload(ruta);
+      d.logger.warn('En Vivo: no se pudo cerrar el bloque', { mensaje: ocultarUrls(error.message).slice(0, 200) });
+    } finally {
+      // Se avanza siempre: un bloque defectuoso no debe reintentarse en bucle ni bloquear los siguientes.
+      s.ultimoBloqueSeg = numeroSegmento(elegidos[elegidos.length - 1]);
+      if (lista) await fs.rm(lista, { force: true }).catch(() => {});
+      s.marcando = false;
+      s.bloqueado = false;
+    }
   }
 
   async function marcar({ segundosAtras, origen = 'manual', deteccion = null } = {}) {

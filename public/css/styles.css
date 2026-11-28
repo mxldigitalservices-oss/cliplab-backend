@@ -280,3 +280,13 @@ body { background: radial-gradient(1200px 500px at 50% -120px, rgba(124, 107, 25
   .campo { min-width: calc(50% - 5px); flex: 1 1 calc(50% - 5px); }
   .bloques { grid-template-columns: 1fr; }
 }
+
+/* Conexiones: tarjeta con API oficial de Meta y cookies como respaldo colapsado */
+.card-oficial { border-color: rgba(62, 207, 142, .28); }
+.respaldo { border-top: 1px dashed var(--borde); padding-top: 8px; }
+.respaldo summary { cursor: pointer; color: var(--suave); font-size: 12px; font-weight: 600; list-style: none; }
+.respaldo summary::-webkit-details-marker { display: none; }
+.respaldo summary::before { content: "▸ "; }
+.respaldo[open] summary::before { content: "▾ "; }
+.respaldo[open] summary { margin-bottom: 8px; }
+.respaldo .acciones { margin-top: 8px; }

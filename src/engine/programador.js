@@ -19,6 +19,7 @@ import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { store } from '../storage/store.js';
 import { resolverMongo, mascararUri } from '../config/mongo.js';
+import { limpiarClipPublicado } from '../utils/tmpCleaner.js';
 
 export const PLATAFORMAS = ['tiktok', 'instagram', 'facebook'];
 export const ESTADOS = ['queued', 'running', 'published', 'failed', 'cancelled'];
@@ -549,6 +550,10 @@ export function crearProgramador(o = {}) {
     await guardarJob(job);
     await persistir('agregarHistorial', entrada);
     await guardarEstado();
+    // Publicado en TODAS sus redes: el mp4 renderizado ya no hace falta (si ningun otro trabajo pendiente lo usa).
+    if (job.status === 'published' && job.rutaVideo && !datos.jobs.some((j) => j.id !== job.id && j.rutaVideo === job.rutaVideo && (j.status === 'queued' || j.status === 'running'))) {
+      await (o.limpiar || limpiarClipPublicado)({ rutaVideo: job.rutaVideo }).catch(() => {});
+    }
     return { ejecutado: true, jobId: job.id, status: job.status, resultados: copia(job.resultados) };
   }
 

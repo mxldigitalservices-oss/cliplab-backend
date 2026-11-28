@@ -410,7 +410,9 @@ function configOllama(opciones = {}) {
   return {
     url: String(opciones.url || process.env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\/+$/, ''),
     modelo: String(opciones.modelo || process.env.OLLAMA_MODEL || 'qwen2.5:3b'),
-    timeoutMs: acotar(Number.isFinite(timeout) && timeout > 0 ? timeout : 3500, 500, 4000),
+    // Un modelo local en CPU (qwen2.5:3b) tarda mas de 4 s en cargar/responder mientras whisper y ffmpeg usan los hilos:
+    // con el tope viejo SIEMPRE caia al heuristico. Ahora 25 s por defecto (OLLAMA_TIMEOUT_MS, maximo 120 s).
+    timeoutMs: acotar(Number.isFinite(timeout) && timeout > 0 ? timeout : 25000, 500, 120000),
   };
 }
 
@@ -444,7 +446,7 @@ async function consultarOllama(entrada, base, opciones) {
     const respuesta = await llamar(cfg.url + '/api/generate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: cfg.modelo, prompt: promptOllama({ ...entrada, base }), stream: false, format: 'json', options: { temperature: 0.4, num_predict: 400 } }),
+      body: JSON.stringify({ model: cfg.modelo, prompt: promptOllama({ ...entrada, base }), stream: false, format: 'json', keep_alive: process.env.OLLAMA_KEEP_ALIVE || '30m', options: { temperature: 0.4, num_predict: 400, num_ctx: 2048 } }),
       signal: AbortSignal.timeout(cfg.timeoutMs),
     });
     if (!respuesta || !respuesta.ok) return null;

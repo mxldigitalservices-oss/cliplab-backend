@@ -31,6 +31,7 @@ export function crearRouterEnVivo({ gestor = gestorEnVivo, almacen = store } = {
   router.post('/iniciar', manejar(async (req, res) => {
     const cuerpo = req.body || {};
     const opciones = { auto: cuerpo.auto === true };
+    if (cuerpo.bloques !== undefined) opciones.bloques = cuerpo.bloques === true;   // modo bloques de 6 min (ENVIVO_BLOQUES=on lo activa por defecto)
     if (cuerpo.cantidad !== undefined) opciones.cantidad = cuerpo.cantidad;   // tope de cortes automaticos de la sesion
     res.status(202).json({ ok: true, sesion: await gestor.iniciar(cuerpo.url, opciones) });
   }));

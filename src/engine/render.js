@@ -198,7 +198,7 @@ async function medirSalida(ruta) {
 }
 
 export async function renderizarClip(opciones) {
-  const { entrada, salida, inicio = 0, duracion, subtitulos = null, modo = 'recorte', onProgreso, signal, logo: opcionLogo, cortes = null, ajustes: opcionAjustes } = opciones;
+  const { entrada, salida, inicio = 0, duracion, subtitulos = null, modo = 'recorte', onProgreso, signal, logo: opcionLogo, cortes = null, ajustes: opcionAjustes, duracionExacta = null } = opciones;
 
   const desde = Number(inicio);
   const largo = Math.min(Number(duracion), config.maxClipSeconds);
@@ -206,6 +206,10 @@ export async function renderizarClip(opciones) {
   const ajustes = sanearAjustes(opcionAjustes !== undefined ? opcionAjustes : (contextoTrabajo.getStore() || {}).ajustes);
   const velocidadAj = ajustes ? ajustes.velocidad : 1;
   const largoSalida = (cortes && cortes.length > 0 ? cortes.reduce((suma, c) => suma + (c.hasta - c.desde), 0) : largo) / velocidadAj;
+  // Duracion exacta (series de 60 s): si el contenido es mas corto, el ultimo cuadro se mantiene y el audio se completa con silencio.
+  const exacta = Number(duracionExacta) > 0 && velocidadAj === 1 ? Number(duracionExacta) : null;
+  const relleno = exacta && exacta > largoSalida ? exacta - largoSalida : 0;
+  const salidaTotal = exacta || largoSalida;
 
   if (!Number.isFinite(desde) || desde < 0) throw new Error('Inicio de clip invalido');
   if (!Number.isFinite(largo) || largo <= 0) throw new Error('Duracion de clip invalida');
@@ -234,6 +238,22 @@ export async function renderizarClip(opciones) {
     modo: modoFinal, subtitulos: rutaAss, fontsDir, logo, cortes: cortesRostro,
     imagen: filtroImagen(ajustes), logoPropio, velocidad: filtroVelocidadVideo(ajustes), audio: cortes && cortes.length > 0 ? audioAj : '',
   });
+  const hayCortes = Boolean(cortes && cortes.length > 0);
+  let filtroFinal = filtro;
+  let mapaVideo = '[v]';
+  let mapaAudio = hayCortes ? (audioAj ? '[audiof]' : '[audio]') : '0:a:0?';
+  let filtroAudioSimple = hayCortes ? '' : audioAj;
+  if (relleno > 0) {
+    const extra = (relleno + 1).toFixed(3);   // 1 s de sobra: el -t final recorta al valor exacto
+    filtroFinal += ';[v]tpad=stop_mode=clone:stop_duration=' + extra + '[vrell]';
+    mapaVideo = '[vrell]';
+    if (hayCortes) {
+      filtroFinal += ';' + mapaAudio + 'apad=pad_dur=' + extra + '[arell]';
+      mapaAudio = '[arell]';
+    } else {
+      filtroAudioSimple = [audioAj, 'apad=pad_dur=' + extra].filter(Boolean).join(',');
+    }
+  }
   const hilos = String(config.cpuThreads);
   const preset = presetLigero(config.videoPreset);
 
@@ -243,10 +263,10 @@ export async function renderizarClip(opciones) {
     '-ss', String(desde), '-i', entrada,
     ...(logo ? ['-i', logo] : []),
     ...(logoPropio ? ['-i', logoPropio.ruta] : []),
-    '-t', String(velocidadAj === 1 ? largo : largoSalida),   // con velocidad se corta en la duracion real de salida (sin cola de video sin audio)
-    '-filter_complex', filtro,
-    '-map', '[v]', ...(cortes && cortes.length > 0 ? ['-map', audioAj ? '[audiof]' : '[audio]'] : ['-map', '0:a:0?']),
-    ...(audioAj && !(cortes && cortes.length > 0) ? ['-af', audioAj] : []),
+    '-t', String(exacta || (velocidadAj === 1 ? largo : largoSalida)),   // con velocidad se corta en la duracion real de salida (sin cola de video sin audio)
+    '-filter_complex', filtroFinal,
+    '-map', mapaVideo, '-map', mapaAudio,
+    ...(filtroAudioSimple ? ['-af', filtroAudioSimple] : []),
     '-c:v', 'libx264', '-preset', preset, '-crf', String(config.videoCrf),
     '-maxrate', '5000k', '-bufsize', '10000k',
     '-pix_fmt', 'yuv420p', '-fpsmax', '30',
@@ -260,7 +280,7 @@ export async function renderizarClip(opciones) {
   const alLinea = (linea) => {
     const coincidencia = /^out_time_(?:us|ms)=(\d+)$/.exec(linea);
     if (!coincidencia || !onProgreso) return;
-    const fraccion = Math.min(1, Number(coincidencia[1]) / 1e6 / largoSalida);
+    const fraccion = Math.min(1, Number(coincidencia[1]) / 1e6 / salidaTotal);
     if (fraccion - ultimo >= 0.02) {
       ultimo = fraccion;
       onProgreso(fraccion);
@@ -292,7 +312,7 @@ export async function renderizarClip(opciones) {
   return {
     archivo: salida,
     bytes: info.size,
-    duracion: medido.duracion || largoSalida,
+    duracion: medido.duracion || salidaTotal,
     ancho: medido.ancho || null,
     alto: medido.alto || null,
     conLogo: Boolean(logo),

@@ -158,22 +158,50 @@ export function renderConexiones(conexiones) {
     return vacio('No hay cuentas vinculadas todavia.');
   }
   return conexiones.map((c) => {
-    const etiqueta = ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
-    const conSesion = c.estado !== 'sin_sesion';
     const plat = esc(c.plataforma);
+    const conSesion = c.estado !== 'sin_sesion';
+    const o = c.oficial || null;
+
+    // Botones de cookies (se conservan intactos: son el respaldo cuando no hay API oficial o falla).
+    const botonesCookies =
+      '<div class="acciones">' +
+        '<button class="btn' + (c.estado === 'activa' ? '' : ' btn-primario') + '" type="button" data-red-accion="pegar" data-red="' + plat + '">' +
+          (conSesion ? 'Reemplazar cookies' : 'Pegar cookies') + '</button>' +
+        (conSesion ? '<button class="btn" type="button" data-red-accion="quitar" data-red="' + plat + '">Quitar</button>' : '') +
+      '</div>';
+
+    // Conexion oficial de Meta (Instagram Graph API / reenvio a Facebook): estado principal; cookies colapsadas como respaldo.
+    if (o) {
+      const conectado = o.conectado === true;
+      const esCross = o.metodo === 'crosspost';
+      const etiqueta = conectado
+        ? { texto: esCross ? 'Cross-post activo' : 'Conectado · API oficial', clase: 'ok' }
+        : { texto: 'Token de Meta con problema', clase: 'err' };
+      const lineas = [];
+      lineas.push('<span>Cuenta: ' + esc(o.cuenta || 'sin datos') + '</span>');
+      if (conectado && !esCross && o.expiraEn) lineas.push('<span>Token vence: ' + esc(formatoFecha(o.expiraEn)) + (Number.isFinite(o.diasRestantes) ? ' (' + esc(o.diasRestantes) + ' d)' : '') + '</span>');
+      if (conectado && esCross) lineas.push('<span>Lo reenvia Meta Accounts Center (declarado, no verificable por API)</span>');
+      lineas.push('<span>Ultima verificacion: ' + esc(formatoFecha(o.verificadoEn)) + '</span>');
+      return '<article class="card card-oficial">' +
+        '<div class="card-cab"><h3>' + esc(nombrePlataforma(c.plataforma)) + '</h3>' + badge(etiqueta) + '</div>' +
+        '<div class="meta">' + lineas.join('') + '</div>' +
+        (!conectado && o.error ? '<div class="meta"><span>' + esc(o.error) + '</span></div>' : '') +
+        '<details class="respaldo"' + (conectado ? '' : ' open') + '>' +
+          '<summary>Respaldo con cookies' + (c.estado === 'activa' ? ' (sesion guardada)' : '') + '</summary>' +
+          '<div class="meta"><span>Estado de las cookies: ' + esc((ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido' }).texto) + '</span></div>' +
+          botonesCookies +
+        '</details>' +
+      '</article>';
+    }
+
+    const etiqueta = ETIQUETAS_CONEXION[c.estado] || { texto: c.estado || 'Desconocido', clase: 'neutro' };
     return '<article class="card">' +
       '<div class="card-cab"><h3>' + esc(nombrePlataforma(c.plataforma)) + '</h3>' + badge(etiqueta) + '</div>' +
       '<div class="meta"><span>Cuenta: ' + esc(c.cuenta || (c.estado === 'activa' ? 'cuenta vinculada' : 'sin vincular')) + '</span>' +
       (c.expiraEn ? '<span>Vence: ' + esc(formatoFecha(c.expiraEn)) + '</span>' : '') +
       '<span>Ultima verificacion: ' + esc(formatoFecha(c.ultimaVerificacion)) + '</span></div>' +
       (c.estado === 'ilegible' && c.detalle ? '<div class="meta"><span>' + esc(c.detalle) + '</span></div>' : '') +
-        (c.modo === 'graph_api' ? '' : (
-          '<div class="acciones">' +
-            '<button class="btn' + (c.estado === 'activa' ? '' : ' btn-primario') + '" type="button" data-red-accion="pegar" data-red="' + plat + '">' +
-              (conSesion ? 'Reemplazar cookies' : 'Pegar cookies') + '</button>' +
-            (conSesion ? '<button class="btn" type="button" data-red-accion="quitar" data-red="' + plat + '">Quitar</button>' : '') +
-            '</div>'
-        )) +
+      botonesCookies +
     '</article>';
   }).join('');
 }

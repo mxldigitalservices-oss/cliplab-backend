@@ -1,0 +1,4 @@
+Scripts de parches antiguos (NO ejecutar).
+Reescribian archivos de src/ y public/ con versiones viejas (p. ej. aplicar-parte1.sh sobrescribe src/engine/programador.js
+y publicador.js). El codigo vigente ya esta en el repositorio; se conservan solo como referencia historica.
+Excluidos de la imagen Docker (.dockerignore). Se pueden borrar sin consecuencias.

@@ -9,6 +9,10 @@ import { iniciarVigilancia, detenerVigilancia } from './sesion/gestor.js';
 import { sincronizarCookiesRedes } from './sesion/cookiesRedes.js';
 import { store } from './storage/store.js';
 import { detalleDeError } from './utils/run.js';
+import { iniciarPurgaUploads } from './upload.js';
+import { iniciarBarridoTmp } from './utils/tmpCleaner.js';
+import { sincronizadorMeta } from './services/conexionesMeta.js';
+import colaSeries from './services/seriesQueue.js';
 
 async function main() {
   await fs.mkdir(config.tmpDir, { recursive: true });
@@ -30,6 +34,8 @@ async function main() {
     }
   }
 
+  let detenerPurga = () => {};
+  let detenerBarrido = () => {};
   const app = createApp();
 
   const server = app.listen(config.port, config.host, () => {
@@ -39,6 +45,12 @@ async function main() {
       env: config.env,
     });
     iniciarVigilancia();
+    // Temporales: subidas viejas, carpetas de trabajo huerfanas y clips antiguos (nunca los que aun esperan publicarse).
+    detenerPurga = iniciarPurgaUploads();
+    detenerBarrido = iniciarBarridoTmp({ protegidas: () => colaSeries.rutasPendientes() });
+    // Meta: verifica el token de Instagram al arrancar y cada META_VERIFICAR_MIN (30) min; cola ordenada de series.
+    sincronizadorMeta.iniciar();
+    colaSeries.iniciar();
     sincronizarCookiesRedes().catch((error) => logger.warn('No se restauraron las sesiones de redes', { mensaje: error.message }));
   });
 
@@ -50,6 +62,10 @@ async function main() {
     logger.info('Senal recibida, cerrando servidor', { signal });
     detenerVigilancia();
     detenerCola();
+    sincronizadorMeta.detener();
+    colaSeries.detener();
+    detenerPurga();
+    detenerBarrido();
 
     server.close((error) => {
       if (error) {
