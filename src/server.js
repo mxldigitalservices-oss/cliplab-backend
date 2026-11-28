@@ -13,6 +13,7 @@ import { iniciarPurgaUploads } from './upload.js';
 import { iniciarBarridoTmp } from './utils/tmpCleaner.js';
 import { sincronizadorMeta } from './services/conexionesMeta.js';
 import colaSeries from './services/seriesQueue.js';
+import { programador } from './engine/programador.js';
 
 async function main() {
   await fs.mkdir(config.tmpDir, { recursive: true });
@@ -51,6 +52,8 @@ async function main() {
     // Meta: verifica el token de Instagram al arrancar y cada META_VERIFICAR_MIN (30) min; cola ordenada de series.
     sincronizadorMeta.iniciar();
     colaSeries.iniciar();
+    // PROG_AUTOARRANQUE=on: el programador de publicaciones queda encendido solo tras cada deploy/reinicio (sin pulsar el boton).
+    programador.autoarrancar().catch((error) => logger.warn('Autoarranque del programador fallido', { mensaje: error.message }));
     sincronizarCookiesRedes().catch((error) => logger.warn('No se restauraron las sesiones de redes', { mensaje: error.message }));
   });
 
@@ -64,6 +67,7 @@ async function main() {
     detenerCola();
     sincronizadorMeta.detener();
     colaSeries.detener();
+    programador.detener().catch(() => {});
     detenerPurga();
     detenerBarrido();
 

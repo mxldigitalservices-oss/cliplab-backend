@@ -18,6 +18,7 @@ import { borrarUpload } from '../upload.js';
 import { construirAssEstilo } from '../estilos-subtitulos.js';
 import { perfilesDeTrabajo } from './rotacion-flujo.js';
 import { procesarSerie } from '../services/storySeriesEngine.js';
+import { autoPublicarClip } from './autopublicar.js';
 
 let avisoLogo = false;
 
@@ -345,6 +346,9 @@ async function procesarSegmento({ clipId, trabajo, video, segmento, indice, tota
       cta: marketing ? marketing.cta : '',
     });
     exito = true;
+    // AUTO_PUBLICAR: el clip listo entra solo a la cola del programador. Sin await y con catch: un fallo de la cola jamas
+    // rompe ni retrasa el pipeline (el clip ya esta completado).
+    autoPublicarClip(clipId).catch((error) => logger.warn('Autopublicacion fallida', { id: clipId, mensaje: error.message }));
     await podarClips();
   } finally {
     if (!exito) await fs.rm(salida, { force: true });

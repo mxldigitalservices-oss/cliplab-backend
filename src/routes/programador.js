@@ -235,7 +235,7 @@ router.post(
       try {
         const copy = adaptarCopyPorRed({ clip, red });
         const r = await publicarClip(
-          { rutaVideo: clip.rutaVideo, plataformas: [red], descripcion: copy.descripcion, etiquetas: copy.hashtags },
+          { clipId, rutaVideo: clip.rutaVideo, plataformas: [red], descripcion: copy.descripcion, etiquetas: copy.hashtags },
           { modo: req.body?.modo }
         );
         const { ok, resultado, error } = resultadoDeRed(red, r);

@@ -250,6 +250,9 @@ async function crearAlmacenMongo({ uri, cargarModulo, nombreBd }) {
  * @param {string|null} [o.mongoUri] por defecto process.env.MONGODB_URI
  * @param {() => Promise<object>} [o.cargarMongo]   por defecto import('mongodb')
  */
+/** PROG_AUTOARRANQUE=on: el programador se enciende solo al arrancar el servidor (tras cada deploy o reinicio en Railway). */
+export const autoarranqueActivo = (env = process.env) => /^(1|true|si|sí|on|yes)$/i.test(String(env.PROG_AUTOARRANQUE ?? '').trim());
+
 export function crearProgramador(o = {}) {
   const cfg = normalizar({ ...leerConfigProgramador(), ...(o.config || {}) });
   const ahora = o.ahora || Date.now;
@@ -705,12 +708,31 @@ export function crearProgramador(o = {}) {
   async function iniciar() {
     if (!detenido) return;
     detenido = false;
-    cargada ||= inicializar();
-    await cargada;
+    try {
+      cargada ||= inicializar();
+      await cargada;
+    } catch (error) {
+      detenido = true;     // sin almacen no hay ciclo: no se deja el estado "activo" colgado
+      cargada = null;
+      throw error;
+    }
     temporizador = setInterval(() => {
       tick().catch((error) => logger.error('Error en el ciclo del programador', error));
     }, cfg.cicloMs);
     if (temporizador.unref) temporizador.unref();
+  }
+
+  /** Enciende el ciclo solo si PROG_AUTOARRANQUE=on. Nunca lanza (un fallo de almacen no debe tumbar el arranque). Devuelve si quedo encendido. */
+  async function autoarrancar(env = process.env) {
+    if (!autoarranqueActivo(env)) return false;
+    try {
+      await iniciar();
+      logger.info('Programador encendido automaticamente (PROG_AUTOARRANQUE=on)', { cicloSeg: Math.round(cfg.cicloMs / 1000) });
+      return true;
+    } catch (error) {
+      logger.warn('No se pudo autoarrancar el programador', { mensaje: sinSecretos(error.message) });
+      return false;
+    }
   }
 
   async function detener() {
@@ -727,7 +749,7 @@ export function crearProgramador(o = {}) {
     await cargada;
   }
 
-  return { iniciar, detener, cargar, tick, encolar, cancelar, reintentar, obtener, listar, historial, estado: estadoActual, reconectarMongo, sonda, config: cfg };
+  return { iniciar, autoarrancar, detener, cargar, tick, encolar, cancelar, reintentar, obtener, listar, historial, estado: estadoActual, reconectarMongo, sonda, config: cfg };
 }
 
 export const programador = crearProgramador();

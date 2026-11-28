@@ -178,9 +178,10 @@ export function renderConexiones(conexiones) {
         ? { texto: esCross ? 'Cross-post activo' : 'Conectado · API oficial', clase: 'ok' }
         : { texto: 'Token de Meta con problema', clase: 'err' };
       const lineas = [];
-      lineas.push('<span>Cuenta: ' + esc(o.cuenta || 'sin datos') + '</span>');
+      lineas.push('<span>' + (o.metodo === 'pagina_api' ? 'Pagina: ' : 'Cuenta: ') + esc(o.cuenta || 'sin datos') + '</span>');
       if (conectado && !esCross && o.expiraEn) lineas.push('<span>Token vence: ' + esc(formatoFecha(o.expiraEn)) + (Number.isFinite(o.diasRestantes) ? ' (' + esc(o.diasRestantes) + ' d)' : '') + '</span>');
       if (conectado && esCross) lineas.push('<span>Lo reenvia Meta Accounts Center (declarado, no verificable por API)</span>');
+      if (conectado && o.metodo === 'pagina_api') lineas.push('<span>' + (o.crosspost ? 'Tambien recibe el reenvio de Instagram' : 'Publicacion directa en la Pagina') + '</span>');
       lineas.push('<span>Ultima verificacion: ' + esc(formatoFecha(o.verificadoEn)) + '</span>');
       return '<article class="card card-oficial">' +
         '<div class="card-cab"><h3>' + esc(nombrePlataforma(c.plataforma)) + '</h3>' + badge(etiqueta) + '</div>' +

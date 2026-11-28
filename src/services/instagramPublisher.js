@@ -6,7 +6,7 @@
 //    IG_USER_ID        id de la cuenta profesional de Instagram (p. ej. @farol_al_dia)
 //    META_APP_ID / META_APP_SECRET   permiten firmar con appsecret_proof y consultar la vigencia del token (debug_token)
 //    IG_GRAPH_VERSION  (opcional) por defecto v21.0; se rechaza cualquier version menor
-//    IG_CROSSPOST_FACEBOOK=on  declara que el envio automatico a Facebook esta activo en Meta Accounts Center
+//    IG_CROSSPOST_FACEBOOK=on (o META_CROSSPOST_FB=true)  declara que el envio automatico a Facebook esta activo en Meta Accounts Center
 //    IG_PUBLISH_TIMEOUT_MIN (10), IG_POLL_MIN_SEG (3), IG_POLL_MAX_SEG (10)
 //    PUBLIC_BASE_URL o RAILWAY_PUBLIC_DOMAIN   para armar la URL publica del clip (Meta DESCARGA el video desde ahi)
 //
@@ -49,7 +49,7 @@ export function leerConfigInstagram(env = process.env) {
     version: versionValida ? version : 'v21.0',
     versionSolicitada: version,
     versionValida,
-    crosspostFacebook: verdadero(env.IG_CROSSPOST_FACEBOOK),
+    crosspostFacebook: verdadero(env.IG_CROSSPOST_FACEBOOK) || verdadero(env.META_CROSSPOST_FB),
     timeoutPublicacionMs: numero(env.IG_PUBLISH_TIMEOUT_MIN, 10) * 60 * 1000,
     sondeoMinMs: numero(env.IG_POLL_MIN_SEG, 3) * 1000,
     sondeoMaxMs: numero(env.IG_POLL_MAX_SEG, 10) * 1000,
@@ -99,6 +99,8 @@ export function clasificarErrorGraph(httpStatus, err = {}) {
   const code = Number(err.code);
   const sub = Number(err.error_subcode);
   const base = { status: httpStatus >= 400 && httpStatus < 600 ? httpStatus : 502 };
+  // La app de Meta tiene activado "Require App Secret": sin META_APP_SECRET (appsecret_proof) todas las llamadas del servidor se rechazan.
+  if (/appsecret_proof/i.test(String(err.message || ''))) return { ...base, status: 400, codigo: 'APPSECRET_REQUERIDO', transitorio: false };
   if (code === 190 || httpStatus === 401) return { ...base, status: 401, codigo: 'TOKEN_INVALIDO', transitorio: false };
   if (code === 10 || (code >= 200 && code <= 299) || httpStatus === 403) return { ...base, status: 403, codigo: 'PERMISOS', transitorio: false };
   if (code === 9 || sub === 2207042) return { ...base, codigo: 'LIMITE_PUBLICACION', transitorio: true };
@@ -155,7 +157,7 @@ export function crearClienteInstagram(deps = {}) {
       const e = (json && json.error) || {};
       const clase = clasificarErrorGraph(respuesta.status, e);
       const msg = ocultarSecretos(e.error_user_msg || e.message || ('HTTP ' + respuesta.status), secretos(c));
-      throw new ErrorInstagram('Instagram: ' + msg, {
+      throw new ErrorInstagram('Instagram: ' + msg + (clase.codigo === 'APPSECRET_REQUERIDO' ? ' -> Define META_APP_SECRET en Railway (o desactiva "Require App Secret" en la app de Meta).' : ''), {
         ...clase,
         detalle: ocultarSecretos(JSON.stringify({ code: e.code, subcode: e.error_subcode, tipo: e.type, fbtrace_id: e.fbtrace_id, http: respuesta.status }), secretos(c)),
       });
@@ -345,6 +347,6 @@ export const publishInstagramReel = cliente.publishInstagramReel;
 export const obtenerCuotaPublicacion = cliente.obtenerCuotaPublicacion;
 export const instagramConfigurado = cliente.instagramConfigurado;
 /** ¿El operador declaro que Meta Accounts Center reenvia a Facebook? (Meta NO expone este ajuste por API: es una declaracion.) */
-export const crosspostFacebookActivo = () => verdadero(process.env.IG_CROSSPOST_FACEBOOK);
+export const crosspostFacebookActivo = () => verdadero(process.env.IG_CROSSPOST_FACEBOOK) || verdadero(process.env.META_CROSSPOST_FB);
 
 export default cliente;

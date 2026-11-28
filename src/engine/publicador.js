@@ -17,6 +17,8 @@ import fs from 'node:fs/promises';
 import { logger } from '../utils/logger.js';
 import { opcionesLanzamiento } from './chromium.js';
 import * as instagramOficial from '../services/instagramPublisher.js';
+import * as facebookOficial from '../services/facebookPublisher.js';
+import { store as almacenDefecto } from '../storage/store.js';
 
 export const REDES_SOPORTADAS = ['tiktok', 'instagram', 'facebook'];
 
@@ -395,11 +397,47 @@ function descripcionEfectiva(clip) {
   return [clip.descripcion, clip.description, clip.resumen, clip.summary, clip.caption, clip.titulo, clip.title].find((v) => String(v ?? '').trim() !== '') ?? '';
 }
 
+/** Anota en el clip del panel lo publicado por API (mediaId, enlace). Es informativo: un fallo aqui nunca afecta a la publicacion. */
+function anotarEnClip(almacen, clip, campos) {
+  try {
+    if (clip && clip.clipId && almacen && typeof almacen.actualizar === 'function') almacen.actualizar(clip.clipId, campos);
+  } catch { /* el clip pudo archivarse o borrarse */ }
+}
+
+/** Decide como sale Facebook (ver el comentario de publicarClip). Funcion pura: facilita probar la matriz de casos. */
+export function decidirFacebook({ ig, fb, plataformas, igOficial, clip, almacen }) {
+  const crosspost = ig.crosspostFacebookActivo();
+  const forzado = fb.facebookDirectoForzado();
+  if (crosspost && igOficial && !forzado) return 'crosspost';
+  let yaEnInstagram = false;
+  try { yaEnInstagram = Boolean(clip && clip.clipId && almacen && almacen.buscar(clip.clipId)?.instagram?.mediaId); } catch { /* sin dato */ }
+  if (fb.facebookConfigurado()) return crosspost && !forzado && yaEnInstagram ? 'crosspost_previo' : 'directo';
+  if (crosspost) return yaEnInstagram ? 'crosspost_previo' : 'esperar_instagram';
+  return 'cookies';
+}
+
+/** Publica UN clip en la Pagina de Facebook por la Graph API oficial. Nunca lanza. */
+async function publicarFacebookOficial(clip, { fb, urlPublica, reloj, almacen }) {
+  try {
+    const caption = armarTexto(descripcionEfectiva(clip), clip.etiquetas);
+    const r = await fb.publishFacebookReel({ videoUrl: urlPublica(clip.rutaVideo), caption, titulo: clip.titulo || clip.title || '' });
+    anotarEnClip(almacen, clip, { facebook: { videoId: r.videoId, permalink: r.permalink, publicadoEn: new Date().toISOString() } });
+    return {
+      ok: true, error: null, codigo: 'OK', transitorio: false, simulado: false, timestamp: reloj(),
+      detalle: 'Publicado en la Pagina de Facebook por la API oficial (' + (r.videoId || 'sin id') + (r.confirmado ? '' : ', sin confirmar el procesamiento') + ')',
+      videoId: r.videoId || null, permalink: r.permalink || null, confirmado: r.confirmado,
+    };
+  } catch (error) {
+    return fallo(error, reloj);
+  }
+}
+
 /** Publica UN clip en Instagram por la Graph API oficial. Nunca lanza: devuelve el resultado del canal. */
-async function publicarInstagramOficial(clip, { oficial, reloj }) {
+async function publicarInstagramOficial(clip, { oficial, reloj, almacen }) {
   try {
     const caption = armarTexto(descripcionEfectiva(clip), clip.etiquetas);
     const r = await oficial.publishInstagramReel({ videoUrl: oficial.urlPublicaDeClip(clip.rutaVideo), caption });
+    anotarEnClip(almacen, clip, { instagram: { mediaId: r.mediaId || null, permalink: r.permalink || null, publicadoEn: new Date().toISOString() } });
     return {
       ok: true, error: null, codigo: 'OK', transitorio: false, simulado: false, timestamp: reloj(),
       detalle: 'Publicado en Instagram por la API oficial (' + (r.mediaId || 'confirmado por estado') + ')',
@@ -440,20 +478,42 @@ export async function publicarClip(clip, o = {}) {
     return marcarTodas(new ErrorPublicador('ARCHIVO_NO_ENCONTRADO', 'No existe el video: ' + clip.rutaVideo, false));
   }
 
-  // Instagram por la API OFICIAL (Graph API) cuando esta configurada y no es una prueba en seco. Las cookies quedan solo
-  // como respaldo: sin IG_ACCESS_TOKEN / IG_USER_ID se usa el flujo de siempre. Con el reenvio a Facebook activo en
-  // Meta Accounts Center (IG_CROSSPOST_FACEBOOK=on) Facebook NO se publica aparte: ya lo hace Meta desde el Reel.
+  // ---- Redes con API OFICIAL (Graph API). Las cookies/Chromium quedan SOLO de respaldo. ----
+  //  Instagram: Graph API si hay IG_ACCESS_TOKEN + IG_USER_ID.
+  //  Facebook (decidirFacebook):
+  //    crosspost         Instagram va en la misma llamada y el reenvio de Meta Accounts Center esta activo: Facebook sale con el Reel
+  //    crosspost_previo  el clip ya esta en Instagram (el reenvio ya ocurrio): no se duplica
+  //    directo           FB_PAGE_ACCESS_TOKEN + FB_PAGE_ID: se publica en la Pagina por Graph API
+  //    esperar_instagram reenvio activo, sin credenciales de Pagina y el clip aun no salio en Instagram: reintento, NUNCA Chromium
+  //    cookies           ninguna API configurada: flujo de siempre
   const resueltas = new Set();
-  const oficial = o.instagramOficial || instagramOficial;
-  if (modo !== 'seco' && plataformas.includes('instagram') && oficial.instagramConfigurado()) {
-    resultados.instagram = await publicarInstagramOficial(clip, { oficial, reloj });
-    resueltas.add('instagram');
-    if (plataformas.includes('facebook') && oficial.crosspostFacebookActivo()) {
-      const ig = resultados.instagram;
-      resultados.facebook = ig.ok
-        ? { ok: true, error: null, codigo: 'CROSSPOST', detalle: 'Reenviado a Facebook por Meta Accounts Center (declarado, no verificable por API)', timestamp: reloj(), transitorio: false, simulado: false, verificado: false }
-        : { ...ig, detalle: 'Facebook depende de la publicacion en Instagram: ' + String(ig.error || '').slice(0, 300) };
-      resueltas.add('facebook');
+  const ig = o.instagramOficial || instagramOficial;
+  const fb = o.facebookOficial || facebookOficial;
+  const almacen = o.almacen || almacenDefecto;
+  if (modo !== 'seco') {
+    const igOficial = plataformas.includes('instagram') && ig.instagramConfigurado();
+    if (igOficial) {
+      resultados.instagram = await publicarInstagramOficial(clip, { oficial: ig, reloj, almacen });
+      resueltas.add('instagram');
+    }
+    if (plataformas.includes('facebook')) {
+      const decision = decidirFacebook({ ig, fb, plataformas, igOficial, clip, almacen });
+      if (decision === 'crosspost') {
+        const r = resultados.instagram;
+        resultados.facebook = r.ok
+          ? { ok: true, error: null, codigo: 'CROSSPOST', detalle: 'Reenviado a Facebook por Meta Accounts Center (declarado, no verificable por API)', timestamp: reloj(), transitorio: false, simulado: false, verificado: false }
+          : { ...r, detalle: 'Facebook depende de la publicacion en Instagram: ' + String(r.error || '').slice(0, 300) };
+        resueltas.add('facebook');
+      } else if (decision === 'crosspost_previo') {
+        resultados.facebook = { ok: true, error: null, codigo: 'CROSSPOST', detalle: 'El clip ya se publico en Instagram y Meta lo reenvio a Facebook (no se vuelve a publicar)', timestamp: reloj(), transitorio: false, simulado: false, verificado: false };
+        resueltas.add('facebook');
+      } else if (decision === 'directo') {
+        resultados.facebook = await publicarFacebookOficial(clip, { fb, urlPublica: ig.urlPublicaDeClip, reloj, almacen });
+        resueltas.add('facebook');
+      } else if (decision === 'esperar_instagram') {
+        resultados.facebook = fallo(new ErrorPublicador('ESPERANDO_INSTAGRAM', 'Facebook se alimenta del reenvio de Instagram y este clip aun no se publico en Instagram. Programa tambien Instagram o define FB_PAGE_ACCESS_TOKEN y FB_PAGE_ID para publicar directo en la Pagina.', true), reloj);
+        resueltas.add('facebook');
+      }
     }
   }
   const restantes = plataformas.filter((p) => !resueltas.has(p));
